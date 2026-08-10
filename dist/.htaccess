@@ -1,19 +1,20 @@
 # ── DigiAjo Global — cPanel / LiteSpeed / Apache SPA Routing ──────────────────
 
-# 1. LiteSpeed & Apache 404 Fallback Handler (Catches all unmatched routes)
+# 1. Catch-all 404 Fallback Handler for LiteSpeed / Apache
 ErrorDocument 404 /index.html
 
-# 2. Mod_Rewrite Rules for React Single Page Application (Vite/React Router)
+# 2. Mod_Rewrite Rules for Single Page Application (React Router)
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
-  RewriteRule ^index\.html$ - [L]
 
-  # Exclude existing physical files, directories, and symlinks
-  RewriteCond %{REQUEST_FILENAME} !-f
-  RewriteCond %{REQUEST_FILENAME} !-d
-  RewriteCond %{REQUEST_FILENAME} !-l
-  RewriteRule . /index.html [L]
+  # Allow direct access to real files and directories (PHP API, CSS, JS, images)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Rewrite all virtual SPA routes (e.g. /admin, /login, /dashboard) to root /index.html
+  RewriteRule ^(.*)$ /index.html [L,QSA]
 </IfModule>
 
 # Disable Directory Index Browsing

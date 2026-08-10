@@ -1,0 +1,19 @@
+# ── DigiAjo Global — cPanel / LiteSpeed / Apache SPA Routing ──────────────────
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # Exclude existing physical files and directories (like /api/, assets, images)
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # Rewrite all SPA client-side routes (e.g., /admin, /login, /dashboard, /register) to index.html
+  RewriteRule ^ index.html [L]
+</IfModule>
+
+# Disable Directory Index Browsing
+Options -Indexes
+
+# Set default charset
+AddDefaultCharset UTF-8

@@ -3,17 +3,17 @@
   RewriteEngine On
   RewriteBase /
 
-  # Exclude existing physical files and directories (like /api/, assets, images)
+  # Do not rewrite if requested file or directory actually exists
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # Rewrite all SPA client-side routes (e.g., /admin, /login, /dashboard, /register) to index.html
+  # Route all other URLs (e.g. /admin, /login, /dashboard, /register) to index.html
   RewriteRule ^ index.html [L]
 </IfModule>
 
 # Disable Directory Index Browsing
 Options -Indexes
 
-# Set default charset
+# Default Charset
 AddDefaultCharset UTF-8

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && cp -r api dist/ 2>/dev/null || true && cp public/.htaccess dist/.htaccess 2>/dev/null || true",
     "preview": "vite preview"
   },
   "dependencies": {

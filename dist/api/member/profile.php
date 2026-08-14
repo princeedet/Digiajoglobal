@@ -47,20 +47,16 @@ try {
         $calcStmt->execute([$user['id']]);
         $calc = $calcStmt->fetch(PDO::FETCH_ASSOC);
 
-        $spStmt = $db->prepare('SELECT start_date, total_saved, weeks_completed FROM savings_plans WHERE user_id = ? ORDER BY created_at DESC LIMIT 1');
+        $spStmt = $db->prepare('SELECT SUM(total_saved) as all_saved, SUM(weeks_completed) as all_weeks, MAX(start_date) as last_start_date, COUNT(*) as hands_count FROM savings_plans WHERE user_id = ? AND status = "active"');
         $spStmt->execute([$user['id']]);
         $sp = $spStmt->fetch();
-        $startDateStr = ($sp && !empty($sp['start_date'])) ? $sp['start_date'] : $user['created_at'];
+        $startDateStr = ($sp && !empty($sp['last_start_date'])) ? $sp['last_start_date'] : $user['created_at'];
 
+        $handsCount = 1;
         if ($sp) {
-            $saved = (float)$sp['total_saved'];
-            $weeks = (int)$sp['weeks_completed'];
-        }
-        if ($calc && (int)$calc['calc_weeks'] > $weeks) {
-            $weeks = (int)$calc['calc_weeks'];
-            $saved = (float)$calc['calc_saved'];
-            // Keep savings_plans table synchronized
-            $db->prepare("UPDATE savings_plans SET weeks_completed = ?, total_saved = ? WHERE user_id = ?")->execute([$weeks, $saved, $user['id']]);
+            $saved = (float)$sp['all_saved'];
+            $weeks = (int)$sp['all_weeks'];
+            $handsCount = (int)$sp['hands_count'] ?: 1;
         }
 
         $startDateObj = new DateTime($startDateStr);
@@ -69,6 +65,7 @@ try {
         $nextDueDate = $nextDueObj->format('l, j M');
     } catch (PDOException $e) {
         $nextDueDate = 'Saturday, 18 Jul';
+        $handsCount = 1;
     }
 
     echo json_encode([
@@ -84,6 +81,7 @@ try {
             'status'              => $user['status'],
             'plan'                => $user['plan_type'] ?? 'Double Up',
             'weeks'               => (int)$weeks,
+            'activeHands'         => (int)$handsCount,
             'nextDueDate'         => $nextDueDate,
             'role'                => 'member',
             'needsSecurityUpdate' => (bool)($user['needs_security_update'] ?? 1),

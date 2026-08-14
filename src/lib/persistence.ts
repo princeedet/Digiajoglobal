@@ -50,13 +50,24 @@ export function savePayments(payments: Payment[]) {
 }
 
 // ── Current User Session ──────────────────────────────────────────────────────
-export interface CurrentUserSession extends MemberUser {
+export interface CurrentUser {
+  id: string
+  name: string
+  email: string
+  phone: string
+  initials: string
+  joined?: string
+  saved?: number
+  status?: string
+  plan?: string
+  weeks?: number
+  role: 'admin' | 'member'
+  adminRole?: 'super_admin' | 'support'
+  permissions?: string[]
   needsSecurityUpdate?: boolean
-  role: 'member' | 'admin'
-  customPassword?: string
 }
 
-export function getCurrentUser(): CurrentUserSession | null {
+export function getCurrentUser(): CurrentUser | null {
   const stored = localStorage.getItem('digiajo_current_user')
   if (stored) {
     try {
@@ -68,7 +79,7 @@ export function getCurrentUser(): CurrentUserSession | null {
   return null
 }
 
-export function setCurrentUser(user: CurrentUserSession | null) {
+export function setCurrentUser(user: CurrentUser | null) {
   if (user) {
     localStorage.setItem('digiajo_current_user', JSON.stringify(user))
   } else {

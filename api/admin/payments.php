@@ -7,6 +7,22 @@ header('Content-Type: application/json');
 $method = $_SERVER['REQUEST_METHOD'];
 
 try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS payments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            payment_ref VARCHAR(100),
+            amount DECIMAL(12,2) NOT NULL,
+            channel VARCHAR(50),
+            status VARCHAR(50) DEFAULT 'pending',
+            purpose VARCHAR(255),
+            member_name VARCHAR(100),
+            member_id VARCHAR(50),
+            paid_at TIMESTAMP NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ");
+    
     if ($method === 'GET') {
         $stmt = $db->query("
             SELECT 

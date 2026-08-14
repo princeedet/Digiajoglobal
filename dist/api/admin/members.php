@@ -14,6 +14,45 @@ $method = $_SERVER['REQUEST_METHOD'];
 try {
     // ── GET: list all members ─────────────────────────────────────────────────
     if ($method === 'GET') {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS savings_plans (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                plan_type VARCHAR(50) NOT NULL,
+                savings_plan_id VARCHAR(50) NOT NULL,
+                total_saved DECIMAL(12,2) DEFAULT 0,
+                weeks_completed INT DEFAULT 0,
+                status VARCHAR(50) DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ");
+        
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS bank_accounts (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                bank_name VARCHAR(100) NOT NULL,
+                account_number VARCHAR(20) NOT NULL,
+                account_name VARCHAR(100) NOT NULL,
+                is_primary TINYINT(1) DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ");
+        
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS referrals (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                referrer_id INT NOT NULL,
+                referee_id INT NOT NULL,
+                status VARCHAR(20) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (referrer_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (referee_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ");
+        
         $stmt = $db->query("
             SELECT
                 u.member_id as id,

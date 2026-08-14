@@ -25,6 +25,7 @@ import { Toast } from './Toast'
 import { getCurrentUser, clearCurrentUser } from '../../lib/persistence'
 type Role = 'member' | 'admin'
 interface NavItem {
+  id?: string
   to: string
   label: string
   icon: LucideIcon
@@ -65,36 +66,48 @@ const memberNav: NavItem[] = [
 ]
 const adminNav: NavItem[] = [
   {
+    id: 'dashboard',
     to: '/admin',
     label: 'Command centre',
     icon: HomeIcon,
     end: true,
   },
   {
+    id: 'members',
     to: '/admin/users',
     label: 'Manage users',
     icon: UsersIcon,
   },
   {
+    id: 'payments',
     to: '/admin/payments',
     label: 'Payments',
     icon: ReceiptTextIcon,
   },
   {
+    id: 'payouts',
     to: '/admin/payouts',
     label: 'Payouts',
     icon: WalletCardsIcon,
   },
   {
+    id: 'referrals',
     to: '/admin/referrals',
     label: 'Referrals',
     icon: UsersIcon,
   },
   {
+    id: 'notifications',
     to: '/admin/notifications',
     label: 'Notifications',
     icon: SendIcon,
   },
+  {
+    id: 'staff',
+    to: '/admin/staff',
+    label: 'Staff Management',
+    icon: ShieldCheckIcon,
+  }
 ]
 function SidebarContent({
   role,
@@ -103,7 +116,19 @@ function SidebarContent({
   role: Role
   onNavigate?: () => void
 }) {
-  const nav = role === 'admin' ? adminNav : memberNav
+  const currentUser = getCurrentUser()
+  
+  let nav = role === 'admin' ? adminNav : memberNav
+  
+  if (role === 'admin' && currentUser) {
+    if (currentUser.adminRole === 'support') {
+      const perms = currentUser.permissions || []
+      nav = adminNav.filter(item => item.id && perms.includes(item.id))
+    } else {
+      // Super admin sees all, but we ensure 'staff' is there (it is, in the array)
+    }
+  }
+
   return (
     <>
       <div className="border-b border-white/10 px-5 py-5">
@@ -111,7 +136,7 @@ function SidebarContent({
       </div>
       <div className="px-4 py-5">
         <p className="px-3 text-[11px] font-bold uppercase tracking-[0.14em] text-white/45">
-          {role === 'admin' ? 'Super admin workspace' : 'Member workspace'}
+          {role === 'admin' ? (currentUser?.adminRole === 'support' ? 'Staff workspace' : 'Super admin workspace') : 'Member workspace'}
         </p>
         <nav className="mt-3 space-y-1" aria-label={`${role} navigation`}>
           {nav.map((item) => (
@@ -232,8 +257,8 @@ function UserMenu({ role }: { role: Role }) {
     if (!currentUser) return
     const endpoint =
       role === 'admin'
-        ? '/Digiajoglobal/api/admin/notifications.php'
-        : `/Digiajoglobal/api/member/notifications.php?member_id=${currentUser.id}`
+        ? '/api/admin/notifications.php'
+        : `/api/member/notifications.php?member_id=${currentUser.id}`
 
     fetch(endpoint)
       .then(res => res.json())
@@ -262,13 +287,13 @@ function UserMenu({ role }: { role: Role }) {
     if (!wasUnread || !currentUser) return
     try {
       if (role === 'admin') {
-        await fetch('/Digiajoglobal/api/admin/notifications.php', {
+        await fetch('/api/admin/notifications.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'mark_read', notification_id: notifId }),
         })
       } else {
-        await fetch('/Digiajoglobal/api/member/notifications.php', {
+        await fetch('/api/member/notifications.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ member_id: currentUser.id, notification_id: notifId }),

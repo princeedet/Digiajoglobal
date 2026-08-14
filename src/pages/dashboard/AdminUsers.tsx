@@ -41,7 +41,7 @@ function EditUserModal({
     setSaving(true)
     setError('')
     try {
-      const res = await fetch('/Digiajoglobal/api/admin/members.php', {
+      const res = await fetch('/api/admin/members.php', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: user.id, ...form }),
@@ -181,7 +181,7 @@ function DeleteConfirmModal({
     setDeleting(true)
     setError('')
     try {
-      const res = await fetch('/Digiajoglobal/api/admin/members.php', {
+      const res = await fetch('/api/admin/members.php', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
@@ -311,7 +311,7 @@ export function AdminUsers() {
     setResetLoading(true)
     setResetError('')
     try {
-      const res = await fetch('/Digiajoglobal/api/admin/reset_user_password.php', {
+      const res = await fetch('/api/admin/reset_user_password.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: selected?.id, new_password: newPassword }),
@@ -342,7 +342,7 @@ export function AdminUsers() {
     if (ids.length === 0) return
     await Promise.all(
       ids.map((id) =>
-        fetch('/Digiajoglobal/api/admin/members.php', {
+        fetch('/api/admin/members.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, status: newStatus }),

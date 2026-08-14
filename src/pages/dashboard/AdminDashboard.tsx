@@ -17,7 +17,114 @@ import { StatCard } from '../../components/dashboard/StatCard'
 import { StatusBadge } from '../../components/dashboard/StatusBadge'
 import { useDashboard } from '../../components/dashboard/DashboardContext'
 import { NAIRA } from '../../lib/brand'
+import { getCurrentUser } from '../../lib/persistence'
+
+function StaffDashboard() {
+  const currentUser = getCurrentUser()
+  const perms = currentUser?.permissions || []
+  const { stats, recentPayments, isLoading } = useDashboard()
+
+  const allActions = [
+    { id: 'members', to: '/admin/users', label: 'Manage members', icon: UsersIcon, desc: 'View and edit member accounts' },
+    { id: 'payments', to: '/admin/payments', label: 'Approve transfers', icon: LandmarkIcon, desc: 'Review incoming bank transfers' },
+    { id: 'payouts', to: '/admin/payouts', label: 'Process payouts', icon: BanknoteIcon, desc: 'Manage member withdrawals' },
+    { id: 'referrals', to: '/admin/referrals', label: 'View referrals', icon: UsersIcon, desc: 'Check member referrals and bonuses' },
+    { id: 'notifications', to: '/admin/notifications', label: 'Send announcements', icon: SendIcon, desc: 'Broadcast messages to members' },
+  ]
+
+  const myActions = allActions.filter(a => perms.includes(a.id))
+
+  if (isLoading) {
+    return (
+      <div className="flex h-64 items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-brand-200 border-t-brand"></div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <PageHeader
+        title={`Welcome, ${currentUser?.name?.split(' ')[0] || 'Staff'}`}
+        description="Here is your staff overview and assigned quick links."
+      />
+
+      <div className="mb-8 grid gap-4 sm:grid-cols-2">
+         {perms.includes('payments') && (
+            <StatCard
+              label="Pending transfers"
+              value={stats.pendingTransfers.toLocaleString()}
+              note="Awaiting your review"
+              icon={Clock3Icon}
+              tone="gold"
+            />
+         )}
+         {perms.includes('members') && (
+            <StatCard
+              label="Active members"
+              value={stats.activeMembers.toLocaleString()}
+              note="Total registered users"
+              icon={UsersIcon}
+              tone="blue"
+            />
+         )}
+      </div>
+
+      <h3 className="font-display font-bold text-gray-900 mb-4">Your Assigned Areas</h3>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        {myActions.length === 0 ? (
+          <div className="col-span-full rounded-2xl border border-gray-100 bg-gray-50 p-8 text-center">
+             <p className="text-gray-500">You have not been assigned any pages yet. Please contact the Super Admin.</p>
+          </div>
+        ) : myActions.map((action) => (
+          <Link key={action.id} to={action.to} className="flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:border-brand-100 hover:shadow-md">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-brand-50 text-brand">
+              <action.icon className="h-6 w-6" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900">{action.label}</h3>
+              <p className="mt-1 text-sm text-gray-500">{action.desc}</p>
+            </div>
+          </Link>
+        ))}
+      </div>
+
+      {perms.includes('payments') && (
+        <section className="mt-8 rounded-2xl border border-gray-100 bg-white shadow-sm">
+          <div className="flex items-center justify-between p-5 border-b border-gray-50">
+            <div>
+              <h3 className="font-display font-bold text-brand-dark">Urgent transfers</h3>
+              <p className="mt-1 text-xs text-gray-500">Review pending payments assigned to you.</p>
+            </div>
+            <Link to="/admin/payments" className="text-sm font-bold text-brand hover:underline">See all</Link>
+          </div>
+          <div className="divide-y divide-gray-100">
+            {recentPayments.filter(p => p.status === 'pending').slice(0, 5).map((payment) => (
+               <div key={payment.id} className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-gray-800">{payment.member}</p>
+                    <p className="text-xs text-gray-500">{payment.purpose} • {payment.channel}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-sm font-bold text-gray-800">{NAIRA(payment.amount)}</p>
+                    <StatusBadge status={payment.status} />
+                  </div>
+               </div>
+            ))}
+            {recentPayments.filter(p => p.status === 'pending').length === 0 && (
+               <p className="p-5 text-sm text-gray-500 text-center">No pending transfers.</p>
+            )}
+          </div>
+        </section>
+      )}
+    </>
+  )
+}
+
 export function AdminDashboard() {
+  const currentUser = getCurrentUser()
+  if (currentUser?.adminRole === 'support') return <StaffDashboard />
+
   const { stats, recentPayments, approvePayment, rejectPayment, isLoading } = useDashboard()
   
   if (isLoading) {

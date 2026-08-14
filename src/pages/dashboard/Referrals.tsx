@@ -22,7 +22,7 @@ export function Referrals() {
 
   React.useEffect(() => {
     if (!user) return
-    fetch(`/Digiajoglobal/api/member/referrals.php?member_id=${user.id}`)
+    fetch(`/api/member/referrals.php?member_id=${user.id}`)
       .then(res => res.json())
       .then(data => {
         if (data.success) {

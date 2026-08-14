@@ -14,7 +14,7 @@ export function MemberNotifications() {
     if (!currentUser) return
     const fetchNotifications = async () => {
       try {
-        const res = await fetch(`/Digiajoglobal/api/member/notifications.php?member_id=${currentUser.id}`)
+        const res = await fetch(`/api/member/notifications.php?member_id=${currentUser.id}`)
         const data = await res.json()
         if (data.success) {
           setNotifications(data.notifications || [])

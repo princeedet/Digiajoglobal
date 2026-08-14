@@ -68,7 +68,7 @@ export function MemberDashboard() {
   const fetchProfile = async () => {
     if (!cachedUser?.id) return
     try {
-      const res = await fetch(`/Digiajoglobal/api/member/profile.php?member_id=${encodeURIComponent(cachedUser.id)}`)
+      const res = await fetch(`/api/member/profile.php?member_id=${encodeURIComponent(cachedUser.id)}`)
       const data = await res.json()
       if (data.success && data.user) {
         setUser(data.user)
@@ -86,7 +86,7 @@ export function MemberDashboard() {
   const fetchPayments = async () => {
     if (!cachedUser?.id) return
     try {
-      const res = await fetch(`/Digiajoglobal/api/member/payments.php?member_id=${encodeURIComponent(cachedUser.id)}`)
+      const res = await fetch(`/api/member/payments.php?member_id=${encodeURIComponent(cachedUser.id)}`)
       const data = await res.json()
       if (data.success) {
         setPayments(data.payments)
@@ -102,7 +102,7 @@ export function MemberDashboard() {
   const fetchReferrals = async () => {
     if (!cachedUser?.id) return
     try {
-      const res = await fetch(`/Digiajoglobal/api/member/referrals.php?member_id=${encodeURIComponent(cachedUser.id)}`)
+      const res = await fetch(`/api/member/referrals.php?member_id=${encodeURIComponent(cachedUser.id)}`)
       const data = await res.json()
       if (data.success) {
         setReferralCount(data.count || 0)
@@ -174,10 +174,12 @@ export function MemberDashboard() {
   }, [payments, user])
 
   // Plan specifics
+  const activeHands = (user as any)?.activeHands || 1
   const isDigiMart = plan.toLowerCase().includes('mart')
-  const completion = isDigiMart ? 100 : Math.round((weeksCompleted / 50) * 100)
-  const targetAmount = isDigiMart ? 100000 : 65000
-  const projectedPayout = isDigiMart ? 150000 : 130000
+  const totalWeeksPossible = 50 * activeHands
+  const completion = isDigiMart ? 100 : Math.round((weeksCompleted / totalWeeksPossible) * 100)
+  const targetAmount = isDigiMart ? 100000 : (65000 * activeHands)
+  const projectedPayout = isDigiMart ? 150000 : (130000 * activeHands)
 
   const copy = async () => {
     const code = referralCode || (user ? `DGA-${user.name.split(' ')[1]?.toUpperCase() || 'USER'}-${user.id.slice(-3)}` : 'DGA-ADEYEMI-824')
@@ -270,10 +272,10 @@ export function MemberDashboard() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-semibold text-white/65">
-                    {plan} Plan
+                    {plan} Plan {activeHands > 1 && `(${activeHands} Hands)`}
                   </p>
                   <h3 className="mt-1 font-display text-2xl font-extrabold">
-                    {isDigiMart ? "Co-ownership Units" : `Week ${weeksCompleted} of 50`}
+                    {isDigiMart ? "Co-ownership Units" : `Week ${weeksCompleted} of ${totalWeeksPossible}`}
                   </h3>
                 </div>
                 <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-accent">
@@ -304,7 +306,7 @@ export function MemberDashboard() {
                 <div>
                   <p className="text-white/55">{isDigiMart ? "Maturity Date" : "Weeks remaining"}</p>
                   <p className="mt-1 font-display text-xl font-bold">
-                    {isDigiMart ? "18 May 2027" : `${50 - weeksCompleted} weeks`}
+                    {isDigiMart ? "18 May 2027" : `${totalWeeksPossible - weeksCompleted} weeks`}
                   </p>
                 </div>
               </div>

@@ -11,22 +11,23 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $body = json_decode(file_get_contents('php://input'), true);
-if (!$body || empty($body['member_id']) || empty($body['amount'])) {
+if (!$body || empty($body['member_id']) || empty($body['amount']) || empty($body['savings_plan_id'])) {
     http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'member_id and amount are required']);
+    echo json_encode(['success' => false, 'error' => 'member_id, amount, and savings_plan_id are required']);
     exit;
 }
 
 $memberId  = trim($body['member_id']);
 $amount    = (float)$body['amount'];
+$planId    = (int)$body['savings_plan_id'];
 $channel   = trim($body['channel'] ?? 'bank_transfer');
 $reference = trim($body['reference'] ?? '');
 $purpose   = trim($body['purpose'] ?? 'Savings contribution');
 
-// ── Business rule: 1 hand = 1 week = ₦1,300 ─────────────────────────────────
+// ── Business rule: 1 hand = ₦1,300 ─────────────────────────────────────────
 $hands        = max(1, (int)($body['hands'] ?? 1));
-$weeksCovered = $hands;   // always equals hands — 7 hands = 7 weeks
-$scope        = $hands > 1 ? 'multi' : 'weekly';
+$weeksCovered = max(1, (int)($body['weeks_covered'] ?? 1));
+$scope        = 'weekly'; // always weekly for hands
 
 $db = getDB();
 
@@ -64,9 +65,9 @@ try {
         INSERT INTO payments
             (payment_ref, user_id, member_id, member_name, amount, channel,
              payment_type, status, payment_status, purpose, hands, payment_scope,
-             weeks_covered, created_at)
+             weeks_covered, savings_plan_id, created_at)
         VALUES
-            (?, ?, ?, ?, ?, ?, 'weekly_contribution', 'pending', 'pending', ?, ?, ?, ?, NOW())
+            (?, ?, ?, ?, ?, ?, 'weekly_contribution', 'pending', 'pending', ?, ?, ?, ?, ?, NOW())
     ");
     $stmt->execute([
         $reference,
@@ -79,12 +80,13 @@ try {
         $hands,
         $scope,
         $weeksCovered,
+        $planId
     ]);
 
     // ── Emails ────────────────────────────────────────────────────────────────
     $handsLabel = $hands . ' ' . ($hands === 1 ? 'hand' : 'hands');
     $weeksLabel = $weeksCovered . ' ' . ($weeksCovered === 1 ? 'week' : 'weeks');
-    $rateNote   = $hands > 1
+    $rateNote   = $weeksCovered > 1
         ? "This covers {$weeksLabel} — ₦" . number_format(1300 * $hands / $weeksCovered, 2) . " per week spread across {$weeksLabel} once approved."
         : "This covers 1 weekly slot.";
 

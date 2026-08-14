@@ -32,7 +32,7 @@ export function AdminPayouts() {
     
     setLoading(true)
     try {
-      const res = await fetch('/Digiajoglobal/api/admin/payouts.php', {
+      const res = await fetch('/api/admin/payouts.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)

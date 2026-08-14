@@ -1,5 +1,5 @@
 import React from 'react'
-import { HashRouter, Routes, Route } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from './components/layout/Layout'
 import { AppShell } from './components/dashboard/AppShell'
 import { Home } from './pages/Home'
@@ -27,12 +27,34 @@ import { AdminPayouts } from './pages/dashboard/AdminPayouts'
 import { AdminNotifications } from './pages/dashboard/AdminNotifications'
 import { AdminSettings } from './pages/dashboard/AdminSettings'
 import { AdminReferrals } from './pages/dashboard/AdminReferrals'
-import { clearSeedData } from './lib/persistence'
+import { StaffManagement } from './pages/admin/StaffManagement'
+import { getCurrentUser } from './lib/persistence'
+
+// Route protector for admin pages
+function AdminRoute({ children, pageId }: { children: React.ReactNode, pageId: string }) {
+  const currentUser = getCurrentUser()
+  if (!currentUser) return <Navigate to="/login" replace />
+  
+  if (currentUser.role === 'admin') {
+    if (currentUser.adminRole === 'support') {
+      const perms = currentUser.permissions || []
+      if (pageId !== 'dashboard' && !perms.includes(pageId)) {
+        return (
+          <div className="flex h-64 flex-col items-center justify-center text-center">
+            <h2 className="font-display text-2xl font-bold text-gray-900">Access Denied</h2>
+            <p className="mt-2 text-gray-500">You do not have permission to view this page.</p>
+          </div>
+        )
+      }
+    }
+  }
+  return <>{children}</>
+}
 
 // ── One-time migration: wipe stale seed data if present from old build ────────
 const DATA_VERSION = 'v2'
 if (localStorage.getItem('digiajo_data_version') !== DATA_VERSION) {
-  clearSeedData()
+  // clearSeedData()
   localStorage.setItem('digiajo_data_version', DATA_VERSION)
 }
 export function App() {
@@ -63,13 +85,14 @@ export function App() {
           <Route path="/dashboard/settings" element={<MemberSettings />} />
         </Route>
         <Route element={<AppShell role="admin" />}>
-          <Route path="/admin" element={<AdminDashboard />} />
-          <Route path="/admin/users" element={<AdminUsers />} />
-          <Route path="/admin/payments" element={<AdminPayments />} />
-          <Route path="/admin/payouts" element={<AdminPayouts />} />
-          <Route path="/admin/referrals" element={<AdminReferrals />} />
-          <Route path="/admin/notifications" element={<AdminNotifications />} />
+          <Route path="/admin" element={<AdminRoute pageId="dashboard"><AdminDashboard /></AdminRoute>} />
+          <Route path="/admin/users" element={<AdminRoute pageId="members"><AdminUsers /></AdminRoute>} />
+          <Route path="/admin/payments" element={<AdminRoute pageId="payments"><AdminPayments /></AdminRoute>} />
+          <Route path="/admin/payouts" element={<AdminRoute pageId="payouts"><AdminPayouts /></AdminRoute>} />
+          <Route path="/admin/referrals" element={<AdminRoute pageId="referrals"><AdminReferrals /></AdminRoute>} />
+          <Route path="/admin/notifications" element={<AdminRoute pageId="notifications"><AdminNotifications /></AdminRoute>} />
           <Route path="/admin/settings" element={<AdminSettings />} />
+          <Route path="/admin/staff" element={<AdminRoute pageId="staff"><StaffManagement /></AdminRoute>} />
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>

@@ -19,7 +19,7 @@ export function AdminReferrals() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/Digiajoglobal/api/admin/referrals.php')
+    fetch('/api/admin/referrals.php')
       .then(res => res.json())
       .then(data => {
         if (data.success) {

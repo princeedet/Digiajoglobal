@@ -57,9 +57,9 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true)
     try {
       const [membersRes, paymentsRes, statsRes] = await Promise.all([
-        fetch('/Digiajoglobal/api/admin/members.php'),
-        fetch('/Digiajoglobal/api/admin/payments.php'),
-        fetch('/Digiajoglobal/api/admin/stats.php')
+        fetch('/api/admin/members.php'),
+        fetch('/api/admin/payments.php'),
+        fetch('/api/admin/stats.php')
       ])
 
       if (membersRes.ok) {
@@ -105,7 +105,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       toast,
       approvePayment: async (id) => {
         try {
-          const res = await fetch('/Digiajoglobal/api/admin/payments.php', {
+          const res = await fetch('/api/admin/payments.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'approve', id })
@@ -123,7 +123,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       },
       rejectPayment: async (id) => {
         try {
-          const res = await fetch('/Digiajoglobal/api/admin/payments.php', {
+          const res = await fetch('/api/admin/payments.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'reject', id })
@@ -141,7 +141,7 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       },
       updateUserStatus: async (id, status) => {
         try {
-          const res = await fetch('/Digiajoglobal/api/admin/members.php', {
+          const res = await fetch('/api/admin/members.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, status })

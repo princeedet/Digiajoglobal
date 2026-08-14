@@ -57,18 +57,25 @@ if ($role === 'admin') {
     $adminName = $admin['full_name'] ?: $admin['name'];
     $nameParts = preg_split('/\s+/', trim($adminName));
     $initials  = strtoupper(implode('', array_map(fn($p) => $p[0] ?? '', array_slice($nameParts, 0, 2))));
+    
+    // Parse permissions if role is support (staff)
+    $permissions = [];
+    if ($admin['role'] === 'support' && !empty($admin['permissions'])) {
+        $permissions = json_decode($admin['permissions'], true) ?: [];
+    }
 
     echo json_encode([
         'success' => true,
         'role'    => 'admin',
         'user'    => [
-            'id'        => 'ADMIN-' . str_pad((string)$admin['id'], 3, '0', STR_PAD_LEFT),
-            'name'      => $adminName,
-            'email'     => $admin['email'],
-            'phone'     => $admin['phone'] ?? '',
-            'initials'  => $initials,
-            'role'      => 'admin',
-            'adminRole' => $admin['role'],
+            'id'          => 'ADMIN-' . str_pad((string)$admin['id'], 3, '0', STR_PAD_LEFT),
+            'name'        => $adminName,
+            'email'       => $admin['email'],
+            'phone'       => $admin['phone'] ?? '',
+            'initials'    => $initials,
+            'role'        => 'admin',
+            'adminRole'   => $admin['role'], // 'super_admin' or 'support'
+            'permissions' => $permissions
         ],
     ]);
     exit;
@@ -80,6 +87,48 @@ $stmt->execute([$email]);
 $user = $stmt->fetch();
 
 if (!$user) {
+    // Fallback: Check if they are actually an admin who forgot to select the Admin role
+    $stmtAdmin = $db->prepare('SELECT * FROM admins WHERE email = ? LIMIT 1');
+    $stmtAdmin->execute([$email]);
+    $admin = $stmtAdmin->fetch();
+    
+    if ($admin) {
+        if (!password_verify($password, $admin['password_hash'])) {
+            http_response_code(401);
+            echo json_encode(['success' => false, 'error' => 'Incorrect password.']);
+            exit;
+        }
+
+        try {
+            $db->prepare('UPDATE admins SET last_login = NOW(), last_login_at = NOW() WHERE id = ?')->execute([$admin['id']]);
+        } catch (PDOException $e) { /* non-fatal */ }
+
+        $adminName = $admin['full_name'] ?: $admin['name'];
+        $nameParts = preg_split('/\s+/', trim($adminName));
+        $initials  = strtoupper(implode('', array_map(fn($p) => $p[0] ?? '', array_slice($nameParts, 0, 2))));
+        
+        $permissions = [];
+        if ($admin['role'] === 'support' && !empty($admin['permissions'])) {
+            $permissions = json_decode($admin['permissions'], true) ?: [];
+        }
+
+        echo json_encode([
+            'success' => true,
+            'role'    => 'admin',
+            'user'    => [
+                'id'          => 'ADMIN-' . str_pad((string)$admin['id'], 3, '0', STR_PAD_LEFT),
+                'name'        => $adminName,
+                'email'       => $admin['email'],
+                'phone'       => $admin['phone'] ?? '',
+                'initials'    => $initials,
+                'role'        => 'admin',
+                'adminRole'   => $admin['role'],
+                'permissions' => $permissions
+            ],
+        ]);
+        exit;
+    }
+
     http_response_code(401);
     echo json_encode(['success' => false, 'error' => 'Account not found. Please register to get started.']);
     exit;

@@ -26,8 +26,31 @@ export interface SavingsRecord {
   dueDate: string
   paidDate: string | null
   amount: number
+  hands: number
   fine: number
-  status: 'paid' | 'late' | 'upcoming'
+  status: 'paid' | 'late' | 'upcoming' | 'missed' | 'approved' | 'pending' | 'rejected'
+  reference: string
+  isMonthly: boolean
+  weekInBatch: number
+  totalInBatch: number
+}
+
+export interface PlanSummary {
+  planId: number
+  handName: string
+  planType: string
+  weeksCompleted: number
+  totalWeeks: number
+  totalSaved: number
+  totalFines: number
+  startDate: string
+  status: string
+  weeklyAmount: number
+}
+
+export interface SavingsHand {
+  summary: PlanSummary
+  weeks: SavingsRecord[]
 }
 
 export interface MemberUser {

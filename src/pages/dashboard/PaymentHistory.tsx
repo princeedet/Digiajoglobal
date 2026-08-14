@@ -28,8 +28,7 @@ interface Payment {
   purpose: string
 }
 
-// ── Business rule: 1 hand = 1 week = ₦1,300 ─────────────────────────────────
-const RATE_PER_HAND = 1300  // ₦ per hand (= per week)
+// ── Business rule: 1 unit = 1 week = weeklyAmount ─────────────────────────────────
 
 export function PaymentHistory() {
   const [filter, setFilter] = useState<'all' | 'approved' | 'pending' | 'rejected'>('all')
@@ -40,18 +39,29 @@ export function PaymentHistory() {
 
   // ── Modal state ──────────────────────────────────────────────────────────────
   const [paymentMethod, setPaymentMethod] = useState<'bank' | 'paystack' | 'flutterwave'>('bank')
+  const [payMode, setPayMode] = useState<'weeks' | 'hands'>('weeks')
   const [hands, setHands] = useState(1)
   const [bankRef, setBankRef] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [submitSuccess, setSubmitSuccess] = useState('')
+  const [activeHands, setActiveHands] = useState<{planId: number, handName: string, weeklyAmount: number}[]>([])
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null)
 
   const currentUser = getCurrentUser()
   const memberId = currentUser?.id || ''
   const isDoubleUp = currentUser?.plan !== 'DigiMart'
+  
+  const activePlan = activeHands.find(p => p.planId === selectedPlanId)
+  const activePlanAmount = activePlan?.weeklyAmount || 0
 
-  // 1 hand = 1 week = ₦1,300  |  DigiMart: 1 unit = ₦100,000
-  const totalAmount = isDoubleUp ? RATE_PER_HAND * hands : 100000 * hands
+  // 1 hand = 1300  |  DigiMart: 1 unit = ₦100,000
+  const totalAmount = isDoubleUp 
+    ? (payMode === 'weeks' ? activePlanAmount * hands : 1300 * hands)
+    : 100000 * hands
+
+  const derivedWeeksCovered = isDoubleUp ? (payMode === 'weeks' ? hands : 1) : 1
+  const derivedHandsPaid = isDoubleUp ? (payMode === 'weeks' ? (activePlanAmount / 1300) * hands : hands) : hands
 
   // ── Fetch payments ───────────────────────────────────────────────────────────
   const fetchPayments = async () => {
@@ -59,7 +69,7 @@ export function PaymentHistory() {
     setLoading(true)
     setFetchError('')
     try {
-      const res = await fetch(`/Digiajoglobal/api/member/payments.php?member_id=${encodeURIComponent(memberId)}`)
+      const res = await fetch(`/api/member/payments.php?member_id=${encodeURIComponent(memberId)}`)
       const data = await res.json()
       if (data.success) {
         setPayments(data.payments)
@@ -86,7 +96,7 @@ export function PaymentHistory() {
     setSubmitError('')
     setSubmitSuccess('')
     try {
-      const res = await fetch('/Digiajoglobal/api/member/submit_payment.php', {
+      const res = await fetch('/api/member/submit_payment.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -94,12 +104,12 @@ export function PaymentHistory() {
           amount: totalAmount,
           channel: 'bank_transfer',
           reference: bankRef,
-          hands,
-          // weeks_covered = hands (1 hand = 1 week)
-          weeks_covered: isDoubleUp ? hands : 1,
+          hands: derivedHandsPaid,
+          savings_plan_id: selectedPlanId,
+          weeks_covered: derivedWeeksCovered,
           payment_scope: isDoubleUp ? (hands > 1 ? 'multi' : 'weekly') : 'unit',
           purpose: isDoubleUp
-            ? `Savings contribution — ${hands} hand${hands > 1 ? 's' : ''} (${hands} week${hands > 1 ? 's' : ''})`
+            ? (payMode === 'weeks' ? `Savings contribution — ${hands} week${hands > 1 ? 's' : ''}` : `Savings contribution — ${hands} hand${hands > 1 ? 's' : ''}`)
             : `DigiMart Co-ownership — ${hands} unit${hands > 1 ? 's' : ''}`,
         }),
       })
@@ -118,13 +128,32 @@ export function PaymentHistory() {
     }
   }
 
-  const openModal = () => {
+  const openModal = async () => {
     setPaymentMethod('bank')
     setHands(1)
     setBankRef('')
     setSubmitError('')
     setSubmitSuccess('')
     setPaymentOpen(true)
+    
+    // Fetch active hands
+    if (isDoubleUp) {
+      try {
+        const res = await fetch(`/api/member/savings_history.php?member_id=${encodeURIComponent(memberId)}`)
+        const data = await res.json()
+        if (data.success && data.hands) {
+          const fetchedHands = data.hands.map((h: any) => ({
+            planId: h.summary.planId,
+            handName: h.summary.handName,
+            weeklyAmount: h.summary.weeklyAmount
+          }))
+          setActiveHands(fetchedHands)
+          if (fetchedHands.length > 0) setSelectedPlanId(fetchedHands[0].planId)
+        }
+      } catch (e) {
+        console.error('Failed to fetch hands', e)
+      }
+    }
   }
 
   const visible = useMemo(
@@ -259,16 +288,16 @@ export function PaymentHistory() {
                 <h3 className="font-display text-xl font-bold text-brand-dark">Payment Submitted!</h3>
                 <p className="mt-2 text-sm text-gray-600 leading-relaxed">{submitSuccess}</p>
 
-                {isDoubleUp && hands > 1 && (
+                {isDoubleUp && derivedHandsPaid > 1 && (
                   <div className="mt-4 rounded-2xl bg-brand-50 p-4 text-left">
                     <p className="text-xs font-bold text-brand-dark mb-2">
                       📅 How your {NAIRA(totalAmount)} will be spread:
                     </p>
                     <div className="space-y-1">
-                      {Array.from({ length: hands }).map((_, i) => (
+                      {Array.from({ length: derivedWeeksCovered }).map((_, i) => (
                         <div key={i} className="flex items-center justify-between text-xs text-gray-600">
                           <span>Week slot {i + 1}</span>
-                          <span className="font-bold text-brand">{NAIRA(RATE_PER_HAND)}</span>
+                          <span className="font-bold text-brand">{NAIRA(activePlanAmount)}</span>
                         </div>
                       ))}
                       <div className="mt-2 border-t border-brand/10 pt-2 flex justify-between text-xs font-bold text-brand-dark">
@@ -293,7 +322,7 @@ export function PaymentHistory() {
                   <h3 className="font-display text-xl font-bold text-brand-dark">Make Payment</h3>
                   <p className="text-xs text-gray-500 mt-0.5">
                     {isDoubleUp
-                      ? 'Each hand = 1 week of savings at ₦1,300. Paying multiple hands covers multiple weeks.'
+                      ? 'Pay for a specific number of weeks based on your plan, or pay per hand.'
                       : 'Each unit = ₦100,000 DigiMart Co-ownership stake.'}
                   </p>
                 </div>
@@ -324,10 +353,46 @@ export function PaymentHistory() {
                   ))}
                 </div>
 
-                {/* ── Number of Hands (= weeks) ── */}
+                {/* ── Select Hand ── */}
+                {isDoubleUp && activeHands.length > 1 && (
+                  <div>
+                    <label className="mb-2 block text-xs font-semibold text-gray-600">Select Hand</label>
+                    <select
+                      value={selectedPlanId || ''}
+                      onChange={(e) => setSelectedPlanId(parseInt(e.target.value))}
+                      className="w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm text-gray-900 focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand/20"
+                    >
+                      {activeHands.map(h => (
+                        <option key={h.planId} value={h.planId}>{h.handName}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* ── Payment Mode Toggle ── */}
+                {isDoubleUp && (
+                  <div className="flex rounded-xl bg-gray-100 p-1">
+                    <button
+                      type="button"
+                      onClick={() => { setPayMode('weeks'); setHands(1); }}
+                      className={`flex-1 rounded-lg py-2 text-xs font-bold transition ${payMode === 'weeks' ? 'bg-white shadow-sm text-brand-dark' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Pay by Weeks
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setPayMode('hands'); setHands(1); }}
+                      className={`flex-1 rounded-lg py-2 text-xs font-bold transition ${payMode === 'hands' ? 'bg-white shadow-sm text-brand-dark' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                      Pay by Hands
+                    </button>
+                  </div>
+                )}
+
+                {/* ── Number Input ── */}
                 <div>
                   <label className="mb-2 block text-xs font-semibold text-gray-600">
-                    {isDoubleUp ? 'Number of Hands (= Weeks to cover)' : 'Number of Units'}
+                    {!isDoubleUp ? 'Number of Units' : (payMode === 'weeks' ? 'Number of Weeks to cover' : 'Number of Hands to pay for')}
                   </label>
                   <div className="flex items-center gap-3">
                     <button
@@ -356,15 +421,15 @@ export function PaymentHistory() {
                     </button>
                   </div>
 
-                  {/* Hands explanation */}
+                  {/* Explanation */}
                   {isDoubleUp && (
                     <div className="mt-2 flex items-start gap-2 rounded-xl bg-brand-50 px-3 py-2.5">
                       <InfoIcon className="h-3.5 w-3.5 mt-0.5 shrink-0 text-brand" />
                       <p className="text-[11px] text-brand-dark leading-snug">
-                        <strong>{hands} hand{hands > 1 ? 's' : ''}</strong> = <strong>{hands} week{hands > 1 ? 's' : ''}</strong> of savings.
-                        {hands > 1
-                          ? ` Your ${NAIRA(totalAmount)} will be spread as ${NAIRA(RATE_PER_HAND)} per week across ${hands} weekly slots once approved.`
-                          : ' Covers 1 weekly slot.'}
+                        {payMode === 'weeks' 
+                          ? <>You are paying for <strong>{hands} week{hands > 1 ? 's' : ''}</strong>. Your {NAIRA(totalAmount)} will cover {hands} week{hands > 1 ? 's' : ''} of contributions.</>
+                          : <>You are paying for <strong>{hands} hand{hands > 1 ? 's' : ''}</strong>. Your {NAIRA(totalAmount)} will cover {hands} week{hands > 1 ? 's' : ''} of contributions.</>
+                        }
                       </p>
                     </div>
                   )}
@@ -379,11 +444,11 @@ export function PaymentHistory() {
                   {isDoubleUp && (
                     <div className="mt-2 space-y-1 border-t border-gray-200 pt-2 text-xs text-gray-500">
                       <div className="flex justify-between">
-                        <span>Rate per hand (per week)</span>
-                        <span>{NAIRA(RATE_PER_HAND)}</span>
+                        <span>Rate per {payMode === 'weeks' ? 'week' : 'hand'}</span>
+                        <span>{NAIRA(activePlanAmount)}</span>
                       </div>
                       <div className="flex justify-between font-medium text-gray-700">
-                        <span>× {hands} hand{hands > 1 ? 's' : ''} ({hands} week{hands > 1 ? 's' : ''})</span>
+                        <span>× {hands} {payMode === 'weeks' ? 'week' : 'hand'}{hands > 1 ? 's' : ''}</span>
                         <span>= {NAIRA(totalAmount)}</span>
                       </div>
                     </div>

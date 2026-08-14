@@ -61,7 +61,7 @@ export function Login() {
     setForgotLoading(true)
     setForgotError('')
     try {
-      const res = await fetch('/Digiajoglobal/api/forgot_password.php', {
+      const res = await fetch('/api/forgot_password.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: forgotEmail }),
@@ -106,7 +106,7 @@ export function Login() {
 
     // ── Try PHP / MySQL API first ─────────────────────────────────────────
     try {
-      const res = await fetch('/Digiajoglobal/api/login.php', {
+      const res = await fetch('/api/login.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: form.email, password: form.password, role }),
@@ -145,7 +145,7 @@ export function Login() {
         form.email.toLowerCase() !== expected.email.toLowerCase() ||
         form.password !== expected.password
       ) {
-        setError('Incorrect admin credentials. Use: admin@digiajo.demo / Admin123!')
+        setError('Invalid username or password.')
         return
       }
       setCurrentUser({

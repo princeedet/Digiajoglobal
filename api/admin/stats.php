@@ -8,6 +8,31 @@ header('Content-Type: application/json');
 // For now, we return the stats for the frontend dashboard.
 
 try {
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS payouts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            amount DECIMAL(12,2) NOT NULL,
+            status VARCHAR(50) DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ");
+    $db->exec("
+        CREATE TABLE IF NOT EXISTS payments (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            payment_ref VARCHAR(100),
+            amount DECIMAL(12,2) NOT NULL,
+            channel VARCHAR(50),
+            status VARCHAR(50) DEFAULT 'pending',
+            purpose VARCHAR(255),
+            member_name VARCHAR(100),
+            member_id VARCHAR(50),
+            paid_at TIMESTAMP NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    ");
+    
     // Active members
     $stmt = $db->query("SELECT COUNT(*) as count FROM users WHERE status = 'active'");
     $activeMembers = (int)$stmt->fetch()['count'];

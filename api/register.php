@@ -228,10 +228,14 @@ require_once __DIR__ . '/utils/email.php';
 $userSubject = "Welcome to DigiAjo Global!";
 $userMsg = "<p>Hi $name,</p>";
 if ($paymentMethod === 'bank') {
-    $userMsg .= "<p>Thank you for registering. Your account is currently pending payment confirmation. Once confirmed by our admin, you can log in using your email and the last 6 digits of your phone number.</p>";
+    $userMsg .= "<p>Thank you for registering. Your account is currently pending payment confirmation. Once confirmed by our admin, you can log in using your email and your default password.</p>";
 } else {
-    $userMsg .= "<p>Thank you for registering. Your account is now active! You can log in using your email and the last 6 digits of your phone number.</p>";
+    $userMsg .= "<p>Thank you for registering. Your account is now active! You can log in using your email and your default password.</p>";
 }
+
+$userMsg .= "<p><strong>Your Default Password:</strong> $defaultPass</p>";
+$userMsg .= "<p><em>Note: Your password is the last 6 digits of your phone number. You can change this in your profile settings after logging in.</em></p>";
+
 send_email($email, $userSubject, $userMsg);
 
 // Email to Admin

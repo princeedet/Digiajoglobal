@@ -22,7 +22,7 @@ export function AdminNotifications() {
   const [selectedNotif, setSelectedNotif] = useState<any | null>(null)
 
   const fetchRecent = () => {
-    fetch('/Digiajoglobal/api/admin/notifications.php')
+    fetch('/api/admin/notifications.php')
       .then(res => res.json())
       .then(data => {
         if (data.success) setRecent(data.notifications)
@@ -42,7 +42,7 @@ export function AdminNotifications() {
     
     setLoading(true)
     try {
-      const res = await fetch('/Digiajoglobal/api/admin/notifications.php', {
+      const res = await fetch('/api/admin/notifications.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
@@ -67,7 +67,7 @@ export function AdminNotifications() {
     setSelectedNotif(notif)
     if (notif.is_unread == 1) {
       try {
-        await fetch('/Digiajoglobal/api/admin/notifications.php', {
+        await fetch('/api/admin/notifications.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'mark_read', notification_id: notif.id }),

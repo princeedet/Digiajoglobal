@@ -34,7 +34,7 @@ export function MemberSettings() {
 
   React.useEffect(() => {
     if (!currentUser) return
-    fetch(`/Digiajoglobal/api/member/bank.php?member_id=${currentUser.id}`)
+    fetch(`/api/member/bank.php?member_id=${currentUser.id}`)
       .then(res => res.json())
       .then(data => {
         if (data.success && data.bank) {
@@ -80,7 +80,7 @@ export function MemberSettings() {
     setCurrentUser(nextUser)
 
     // Notify backend to send email
-    fetch('/Digiajoglobal/api/member/notify_action.php', {
+    fetch('/api/member/notify_action.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -115,7 +115,7 @@ export function MemberSettings() {
     setCurrentUser(nextUser)
 
     // Notify backend to send email
-    fetch('/Digiajoglobal/api/member/notify_action.php', {
+    fetch('/api/member/notify_action.php', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -137,7 +137,7 @@ export function MemberSettings() {
       return
     }
     try {
-      const res = await fetch('/Digiajoglobal/api/member/bank.php', {
+      const res = await fetch('/api/member/bank.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

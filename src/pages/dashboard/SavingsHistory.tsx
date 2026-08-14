@@ -5,41 +5,17 @@ import {
   Loader2Icon,
   PiggyBankIcon,
   TrendingUpIcon,
-  LayersIcon,
   CalendarIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   FilterIcon,
+  PlusIcon,
 } from 'lucide-react'
 import { PageHeader } from '../../components/dashboard/PageHeader'
 import { StatusBadge } from '../../components/dashboard/StatusBadge'
 import { NAIRA } from '../../lib/brand'
 import { getCurrentUser } from '../../lib/persistence'
-
-interface WeekRecord {
-  week: number
-  dueDate: string
-  paidDate: string | null
-  amount: number
-  hands: number
-  fine: number
-  status: 'approved' | 'pending' | 'rejected' | 'missed'
-  reference: string
-  isMonthly: boolean
-  weekInBatch: number
-  totalInBatch: number
-}
-
-interface PlanSummary {
-  planType: string
-  weeksCompleted: number
-  totalWeeks: number
-  totalSaved: number
-  totalFines: number
-  startDate: string
-  status: string
-  weeklyAmount: number
-}
+import { type SavingsHand, type SavingsRecord } from '../../lib/dashboard-data'
 
 type FilterOption = 'all' | 'this_month' | 'this_week' | 'approved' | 'pending' | 'missed'
 
@@ -49,10 +25,13 @@ export function SavingsHistory() {
   const currentUser = getCurrentUser()
   const memberId = currentUser?.id || ''
 
-  const [weeks, setWeeks] = useState<WeekRecord[]>([])
-  const [summary, setSummary] = useState<PlanSummary | null>(null)
+  const [hands, setHands] = useState<SavingsHand[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  // Track active tab (planId)
+  const [activePlanId, setActivePlanId] = useState<number | null>(null)
 
   // ── Filters & Pagination ───────────────────────────────────────────────────
   const [periodFilter, setPeriodFilter] = useState<FilterOption>('all')
@@ -62,12 +41,14 @@ export function SavingsHistory() {
     if (!memberId) return
     try {
       const res = await fetch(
-        `/Digiajoglobal/api/member/savings_history.php?member_id=${encodeURIComponent(memberId)}`
+        `/api/member/savings_history.php?member_id=${encodeURIComponent(memberId)}`
       )
       const data = await res.json()
       if (data.success) {
-        setWeeks(data.weeks || [])
-        setSummary(data.summary || null)
+        setHands(data.hands || [])
+        if (!activePlanId && data.hands?.length > 0) {
+          setActivePlanId(data.hands[0].summary.planId)
+        }
       } else {
         setError(data.error || 'Failed to load savings history.')
       }
@@ -84,10 +65,37 @@ export function SavingsHistory() {
     return () => clearInterval(interval)
   }, [memberId])
 
-  // Reset pagination on filter change
+  // Reset pagination on filter change or tab change
   useEffect(() => {
     setCurrentPage(1)
-  }, [periodFilter])
+  }, [periodFilter, activePlanId])
+
+  const handleCreateHand = async () => {
+    if (!confirm('Are you sure you want to open an additional 50-week Hand?')) return
+    setCreating(true)
+    try {
+      const res = await fetch('/api/member/create_hand.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ member_id: memberId })
+      })
+      const data = await res.json()
+      if (data.success) {
+        alert('New Hand opened successfully!')
+        fetchHistory()
+      } else {
+        alert(data.error || 'Failed to open hand.')
+      }
+    } catch (e) {
+      alert('Network error')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const activeHand = hands.find(h => h.summary.planId === activePlanId) || hands[0]
+  const weeks = activeHand?.weeks || []
+  const summary = activeHand?.summary
 
   // ── Filtered & Paginated weeks ─────────────────────────────────────────────
   const filteredWeeks = useMemo(() => {
@@ -141,6 +149,16 @@ export function SavingsHistory() {
       <PageHeader
         title="Savings History"
         description="Track each week of your 50-week Double Up plan. Multi-week payments are spread across weekly slots."
+        action={
+          <button
+            onClick={handleCreateHand}
+            disabled={creating}
+            className="inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-dark transition disabled:opacity-50"
+          >
+            {creating ? <Loader2Icon className="h-4 w-4 animate-spin" /> : <PlusIcon className="h-4 w-4" />}
+            Open New Hand
+          </button>
+        }
       />
 
       {loading ? (
@@ -154,6 +172,25 @@ export function SavingsHistory() {
         </div>
       ) : (
         <>
+          {/* Hands Tabs */}
+          {hands.length > 1 && (
+            <div className="mb-6 flex gap-2 overflow-x-auto pb-2">
+              {hands.map((hand) => (
+                <button
+                  key={hand.summary.planId}
+                  onClick={() => setActivePlanId(hand.summary.planId)}
+                  className={`shrink-0 rounded-xl px-5 py-2.5 text-sm font-bold transition ${
+                    activePlanId === hand.summary.planId
+                      ? 'bg-brand text-white shadow-sm'
+                      : 'bg-white border border-gray-200 text-gray-600 hover:bg-brand-50 hover:text-brand'
+                  }`}
+                >
+                  {hand.summary.handName}
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Summary cards */}
           {summary && (
             <div className="mb-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -206,11 +243,11 @@ export function SavingsHistory() {
                 </div>
                 <p className={`mt-2 font-display text-2xl font-extrabold ${
                   summary.totalFines > 0 ? 'text-orange-600' : 'text-gray-400'
-                }`}>
+                 }`}>
                   {NAIRA(summary.totalFines)}
                 </p>
                 <p className="mt-1 text-xs text-gray-500">
-                  {summary.totalFines > 0 ? 'Late payment penalties (₦1,300 per missed week)' : 'No fines yet — great job!'}
+                  {summary.totalFines > 0 ? 'Late payment penalties' : 'No fines yet — great job!'}
                 </p>
               </div>
             </div>
@@ -218,7 +255,6 @@ export function SavingsHistory() {
 
           {/* ── Filters & Legend Bar ────────────────────────────────────────────── */}
           <div className="mb-4 space-y-3">
-            {/* Filter buttons */}
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-wider mr-1">
                 <FilterIcon className="h-3.5 w-3.5" /> Filter:
@@ -238,7 +274,6 @@ export function SavingsHistory() {
               ))}
             </div>
 
-            {/* Indicators legend */}
             <div className="flex flex-wrap items-center gap-3 pt-1">
               <div className="flex items-center gap-1.5 text-xs text-gray-500">
                 <CalendarIcon className="h-3.5 w-3.5 text-brand" />
@@ -254,7 +289,6 @@ export function SavingsHistory() {
 
           {/* ── Table Card ──────────────────────────────────────────────────────── */}
           <div className="rounded-2xl border border-gray-100 bg-white shadow-sm overflow-hidden">
-            {/* Desktop table */}
             <div className="hidden overflow-x-auto md:block">
               <table className="w-full text-left">
                 <thead className="bg-gray-50 text-xs uppercase tracking-wide text-gray-500">
@@ -315,7 +349,6 @@ export function SavingsHistory() {
               </table>
             </div>
 
-            {/* Mobile cards */}
             <div className="divide-y divide-gray-100 md:hidden">
               {paginatedWeeks.length === 0 && (
                 <div className="p-8 text-center text-sm text-gray-500">
@@ -339,7 +372,7 @@ export function SavingsHistory() {
                       </div>
                       <p className="mt-0.5 text-xs text-gray-500">Due {item.dueDate}</p>
                     </div>
-                    <StatusBadge status={item.status} />
+                    <StatusBadge status={item.status as any} />
                   </div>
                   <div className="mt-3 grid grid-cols-3 gap-2 text-xs">
                     <span className="rounded-lg bg-gray-50 p-2 text-gray-500">
@@ -359,21 +392,13 @@ export function SavingsHistory() {
               ))}
             </div>
 
-            {/* ── Pagination Footer ──────────────────────────────────────────────── */}
             {filteredWeeks.length > 0 && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-gray-100 px-5 py-4 bg-gray-50/50 text-xs text-gray-600">
                 <div>
-                  Showing{' '}
-                  <span className="font-bold text-brand-dark">
-                    {(currentPage - 1) * ITEMS_PER_PAGE + 1}
-                  </span>{' '}
-                  to{' '}
-                  <span className="font-bold text-brand-dark">
-                    {Math.min(currentPage * ITEMS_PER_PAGE, filteredWeeks.length)}
-                  </span>{' '}
-                  of <span className="font-bold text-brand-dark">{filteredWeeks.length}</span> weeks
+                  Showing <span className="font-bold text-brand-dark">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
+                  <span className="font-bold text-brand-dark">{Math.min(currentPage * ITEMS_PER_PAGE, filteredWeeks.length)}</span> of{' '}
+                  <span className="font-bold text-brand-dark">{filteredWeeks.length}</span> weeks
                 </div>
-
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -382,11 +407,7 @@ export function SavingsHistory() {
                   >
                     <ChevronLeftIcon className="h-4 w-4" /> Previous
                   </button>
-
-                  <span className="font-bold text-brand-dark px-2">
-                    Page {currentPage} of {totalPages}
-                  </span>
-
+                  <span className="font-bold text-brand-dark px-2">Page {currentPage} of {totalPages}</span>
                   <button
                     onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                     disabled={currentPage === totalPages}
@@ -399,16 +420,14 @@ export function SavingsHistory() {
             )}
           </div>
 
-          {/* Next due banner */}
           {summary && summary.weeksCompleted < summary.totalWeeks && (
             <div className="mt-6 rounded-2xl bg-brand-dark p-5 text-white">
               <div className="flex items-center gap-3">
                 <CalendarDaysIcon className="h-5 w-5 text-accent shrink-0" />
                 <div>
-                  <p className="font-bold">Week {summary.weeksCompleted + 1} coming up</p>
+                  <p className="font-bold">Week {summary.weeksCompleted + 1} coming up for {summary.handName}</p>
                   <p className="mt-0.5 text-sm text-white/70">
                     Your next contribution of {NAIRA(summary.weeklyAmount)} is due.
-                    Pay early to stay on track — or pay for multiple weeks to cover ahead.
                   </p>
                 </div>
               </div>
@@ -417,7 +436,7 @@ export function SavingsHistory() {
 
           {summary && summary.weeksCompleted >= summary.totalWeeks && (
             <div className="mt-6 rounded-2xl bg-brand p-5 text-white text-center">
-              <p className="font-display text-xl font-extrabold">🎉 50 Weeks Complete!</p>
+              <p className="font-display text-xl font-extrabold">🎉 50 Weeks Complete for {summary.handName}!</p>
               <p className="mt-1 text-sm text-white/80">
                 Congratulations! You have completed your Double Up plan. Contact admin to process your payout.
               </p>

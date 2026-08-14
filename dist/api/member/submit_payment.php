@@ -11,9 +11,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $body = json_decode(file_get_contents('php://input'), true);
-if (!$body || empty($body['member_id']) || empty($body['amount']) || empty($body['savings_plan_id'])) {
+if (!$body || empty($body['member_id']) || empty($body['amount'])) {
     http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'member_id, amount, and savings_plan_id are required']);
+    echo json_encode(['success' => false, 'error' => 'member_id and amount are required']);
     exit;
 }
 

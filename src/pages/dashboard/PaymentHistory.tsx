@@ -317,10 +317,10 @@ export function PaymentHistory() {
               </div>
             ) : (
               /* ── Payment form ── */
-              <form onSubmit={handleMakePayment} className="p-6 space-y-5">
+              <form onSubmit={handleMakePayment} className="p-5 space-y-4">
                 <div>
-                  <h3 className="font-display text-xl font-bold text-brand-dark">Make Payment</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
+                  <h3 className="font-display text-lg font-bold text-brand-dark">Make Payment</h3>
+                  <p className="text-xs text-gray-500">
                     {isDoubleUp
                       ? 'Pay for a specific number of weeks based on your plan, or pay per hand.'
                       : 'Each unit = ₦100,000 DigiMart Co-ownership stake.'}
@@ -436,13 +436,13 @@ export function PaymentHistory() {
                 </div>
 
                 {/* ── Amount summary ── */}
-                <div className="rounded-2xl bg-gray-50 border border-gray-100 p-4">
+                <div className="rounded-2xl bg-gray-50 border border-gray-100 p-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Total to Transfer</span>
-                    <span className="font-display text-2xl font-extrabold text-brand">{NAIRA(totalAmount)}</span>
+                    <span className="font-display text-xl font-extrabold text-brand">{NAIRA(totalAmount)}</span>
                   </div>
                   {isDoubleUp && (
-                    <div className="mt-2 space-y-1 border-t border-gray-200 pt-2 text-xs text-gray-500">
+                    <div className="mt-1.5 space-y-1 border-t border-gray-200 pt-1.5 text-xs text-gray-500">
                       <div className="flex justify-between">
                         <span>Rate per {payMode === 'weeks' ? 'week' : 'hand'}</span>
                         <span>{NAIRA(activePlanAmount)}</span>
@@ -456,9 +456,9 @@ export function PaymentHistory() {
                 </div>
 
                 {/* ── Bank details ── */}
-                <div className="rounded-2xl bg-gray-50 p-4 border border-gray-100">
+                <div className="rounded-2xl bg-gray-50 p-3 border border-gray-100">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-gray-400">Payment Account Details</span>
-                  <div className="mt-2 space-y-1.5 text-xs">
+                  <div className="mt-1.5 space-y-1 text-xs">
                     <div className="flex justify-between">
                       <span className="text-gray-500">Bank Name</span>
                       <span className="font-bold text-brand-dark">Rigo Microfinance Bank</span>

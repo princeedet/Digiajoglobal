@@ -19,15 +19,15 @@ if (!$body || empty($body['member_id']) || empty($body['amount'])) {
 
 $memberId  = trim($body['member_id']);
 $amount    = (float)$body['amount'];
-$planId    = (int)$body['savings_plan_id'];
+$planId    = !empty($body['savings_plan_id']) ? (int)$body['savings_plan_id'] : null;
 $channel   = trim($body['channel'] ?? 'bank_transfer');
 $reference = trim($body['reference'] ?? '');
 $purpose   = trim($body['purpose'] ?? 'Savings contribution');
 
-// ── Business rule: 1 hand = ₦1,300 ─────────────────────────────────────────
+// ── Business rule: 1 hand = ₦1,300/week ─────────────────────────────────────
 $hands        = max(1, (int)($body['hands'] ?? 1));
 $weeksCovered = max(1, (int)($body['weeks_covered'] ?? 1));
-$scope        = 'weekly'; // always weekly for hands
+$scope        = 'weekly';
 
 $db = getDB();
 
@@ -107,9 +107,15 @@ try {
     <p>Please approve or reject it in the admin command centre.</p>";
     send_email('admin@digiajoglobal.com', $subjectAdmin, $msgAdmin);
 
-    $msg = $hands > 1
-        ? "Payment received for {$handsLabel} ({$weeksLabel}). Once approved, ₦" . number_format(1300, 2) . " will be allocated to each of your {$weeksLabel}."
-        : "Weekly payment received. Admin will verify your transfer shortly.";
+    if ($weeksCovered > 1 && $hands > 1) {
+        $msg = "Payment received for {$handsLabel} ({$weeksLabel}). Once approved, ₦" . number_format(1300 * $hands, 2) . " will be allocated across each of your {$weeksLabel} (₦1,300.00 per hand/week).";
+    } elseif ($hands > 1) {
+        $msg = "Payment received for {$handsLabel} ({$weeksLabel}). Once approved, ₦" . number_format(1300, 2) . " will be allocated to each of your {$handsLabel} (₦" . number_format($amount, 2) . " total for Week " . max(1, $weeksCovered) . ").";
+    } elseif ($weeksCovered > 1) {
+        $msg = "Payment received for {$weeksLabel} (1 hand). Once approved, ₦1,300.00 will be credited across your {$weeksLabel}.";
+    } else {
+        $msg = "Weekly payment received. Once approved, ₦1,300.00 will be credited to your savings.";
+    }
 
     echo json_encode([
         'success'   => true,

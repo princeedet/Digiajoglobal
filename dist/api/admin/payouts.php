@@ -10,8 +10,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 }
 
 $input = json_decode(file_get_contents('php://input'), true);
-$userId = $input['member'] ?? null;
-$amount = $input['amount'] ?? 0;
+$userId = $input['member_id'] ?? $input['member'] ?? null;
+$amount = (float)($input['amount'] ?? 0);
 $reason = $input['reason'] ?? '';
 $notes = $input['notes'] ?? '';
 
@@ -32,8 +32,8 @@ if (strpos($reason, 'Double Up') !== false) {
 $db = getDB();
 
 try {
-    $stmt = $db->prepare('SELECT id, name, email FROM users WHERE member_id = ?');
-    $stmt->execute([$userId]);
+    $stmt = $db->prepare('SELECT id, name, email FROM users WHERE member_id = ? OR id = ? LIMIT 1');
+    $stmt->execute([$userId, is_numeric($userId) ? (int)$userId : 0]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user) {

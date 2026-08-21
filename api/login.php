@@ -172,13 +172,67 @@ if ($user['status'] === 'suspended') {
 }
 
 // ─── Fetch Savings Data ───────────────────────────────────────────────────────
-$saved = 0;
-$weeks = 0;
+$saved = (float)($user['saved'] ?? 0);
+$weeks = (int)($user['weeks'] ?? 0);
+$activeHands = 1;
 try {
-    $spStmt = $db->prepare('SELECT total_saved, weeks_completed FROM savings_plans WHERE user_id = ? ORDER BY created_at DESC LIMIT 1');
-    $spStmt->execute([$user['id']]);
-    $sp = $spStmt->fetch();
-    if ($sp) { $saved = $sp['total_saved']; $weeks = $sp['weeks_completed']; }
+    $payStmt = $db->prepare("
+        SELECT 
+            COUNT(*) as count_payments,
+            COALESCE(SUM(COALESCE(weeks_covered, 1)), 0) as calc_weeks,
+            COALESCE(SUM(amount), 0) as calc_saved,
+            MAX(COALESCE(NULLIF(hands, 0), ROUND(amount / 1300), 1)) as calc_hands
+        FROM payments
+        WHERE (user_id = ? OR member_id = ?) 
+          AND status IN ('approved', 'confirmed', 'success')
+          AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
+          AND (purpose IS NULL OR (
+              LOWER(purpose) NOT LIKE '%registration%' 
+              AND LOWER(purpose) NOT LIKE '%reg fee%' 
+              AND LOWER(purpose) NOT LIKE '%one-time%'
+              AND LOWER(purpose) NOT LIKE '%fine%'
+          ))
+          AND amount != 2000
+    ");
+    $payStmt->execute([$user['id'], $user['member_id']]);
+    $calc = $payStmt->fetch(PDO::FETCH_ASSOC);
+
+    $calcWeeks = (int)($calc['calc_weeks'] ?? 0);
+    $calcSaved = (float)($calc['calc_saved'] ?? 0);
+    $calcHands = max(1, (int)($calc['calc_hands'] ?? 1));
+
+    $lastPayStmt = $db->prepare("
+        SELECT hands, amount FROM payments 
+        WHERE (user_id = ? OR member_id = ?)
+          AND status IN ('approved', 'confirmed', 'success')
+          AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
+          AND (purpose IS NULL OR (
+              LOWER(purpose) NOT LIKE '%registration%' 
+              AND LOWER(purpose) NOT LIKE '%reg fee%' 
+              AND LOWER(purpose) NOT LIKE '%one-time%'
+              AND LOWER(purpose) NOT LIKE '%fine%'
+          ))
+          AND amount != 2000
+        ORDER BY created_at DESC LIMIT 1
+    ");
+    $lastPayStmt->execute([$user['id'], $user['member_id']]);
+    $lastPay = $lastPayStmt->fetch(PDO::FETCH_ASSOC);
+    if ($lastPay) {
+        $amt = (float)$lastPay['amount'];
+        $h = (int)($lastPay['hands'] ?? 1);
+        if ($h <= 1 && $amt > 1300 && fmod($amt, 1300) == 0) {
+            $h = (int)round($amt / 1300);
+        }
+        $activeHands = max(1, $h);
+    } else {
+        $activeHands = $calcHands;
+    }
+
+    $saved = $calcSaved;
+    $weeks = $calcWeeks;
+    if ($weeks === 0 && $saved > 0 && $activeHands > 0) {
+        $weeks = max(1, (int)round($saved / ($activeHands * 1300)));
+    }
 } catch (PDOException $e) { /* non-fatal */ }
 
 // ─── Update last login ─────────────────────────────────────────────────────
@@ -201,6 +255,7 @@ echo json_encode([
         'status'              => $user['status'],
         'plan'                => $user['plan_type'] ?? 'Double Up',
         'weeks'               => (int)$weeks,
+        'activeHands'         => (int)$activeHands,
         'role'                => 'member',
         'needsSecurityUpdate' => (bool)($user['needs_security_update'] ?? 1),
     ],

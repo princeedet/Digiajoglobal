@@ -125,7 +125,7 @@ export function AdminDashboard() {
   const currentUser = getCurrentUser()
   if (currentUser?.adminRole === 'support') return <StaffDashboard />
 
-  const { stats, recentPayments, approvePayment, rejectPayment, isLoading } = useDashboard()
+  const { payments, stats, recentPayments, approvePayment, rejectPayment, isLoading } = useDashboard()
   
   if (isLoading) {
     return (
@@ -134,18 +134,22 @@ export function AdminDashboard() {
       </div>
     )
   }
+  const pendingPayments = payments.filter((p) => p.status === 'pending')
+
   return (
     <>
       <PageHeader
-        title="Operations at a glance"
-        description="A working view of the DigiAjo savings and payout operation."
+        title="Admin overview"
+        description="Monitor system-wide savings, weekly payouts, and pending approvals."
         action={
-          <Link
-            to="/admin/payments"
-            className="inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-dark"
-          >
-            Review approvals <ArrowRightIcon className="h-4 w-4" />
-          </Link>
+          <div className="flex gap-2">
+            <Link
+              to="/admin/payments"
+              className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-bold text-gray-700 shadow-sm transition hover:bg-gray-50"
+            >
+              Review payments
+            </Link>
+          </div>
         }
       />
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -185,7 +189,9 @@ export function AdminDashboard() {
                 Urgent transfer approvals
               </h3>
               <p className="mt-1 text-xs text-gray-500">
-                Review transfers before the next reconciliation.
+                {pendingPayments.length > 0
+                  ? `Review ${pendingPayments.length} pending transfer${pendingPayments.length === 1 ? '' : 's'} awaiting confirmation.`
+                  : 'Review transfers before the next reconciliation.'}
               </p>
             </div>
             <Link to="/admin/payments" className="text-sm font-bold text-brand">
@@ -193,8 +199,8 @@ export function AdminDashboard() {
             </Link>
           </div>
           <div className="divide-y divide-gray-100">
-            {recentPayments.filter(p => p.status === 'pending').length ? (
-              recentPayments.filter(p => p.status === 'pending').map((payment) => (
+            {pendingPayments.length ? (
+              pendingPayments.slice(0, 10).map((payment) => (
                 <div
                   key={payment.id}
                   className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"

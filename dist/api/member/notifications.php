@@ -13,9 +13,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET') {
 
     $db = getDB();
     try {
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS notifications (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NULL,
+                member_id VARCHAR(50) NULL,
+                title VARCHAR(255) NOT NULL,
+                body TEXT,
+                message TEXT,
+                kind VARCHAR(50) DEFAULT 'info',
+                type VARCHAR(50) DEFAULT 'info',
+                audience VARCHAR(50) DEFAULT 'all',
+                target_user INT NULL,
+                target_plan VARCHAR(50) NULL,
+                sent_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ");
+
+        $db->exec("
+            CREATE TABLE IF NOT EXISTS user_notification_reads (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                user_id INT NOT NULL,
+                notification_id INT NOT NULL,
+                read_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY user_notif (user_id, notification_id)
+            )
+        ");
+
         // 1. Get internal user ID
-        $stmt = $db->prepare('SELECT id, status, plan_type FROM users WHERE member_id = ? LIMIT 1');
-        $stmt->execute([$memberId]);
+        $stmt = $db->prepare('SELECT id, status, plan_type FROM users WHERE member_id = ? OR id = ? LIMIT 1');
+        $stmt->execute([$memberId, is_numeric($memberId) ? (int)$memberId : 0]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (!$user) {

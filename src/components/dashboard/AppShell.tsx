@@ -23,6 +23,7 @@ import { Logo } from '../ui/Logo'
 import { DashboardProvider } from './DashboardContext'
 import { Toast } from './Toast'
 import { getCurrentUser, clearCurrentUser } from '../../lib/persistence'
+import { apiFetch } from '../../lib/api'
 type Role = 'member' | 'admin'
 interface NavItem {
   id?: string
@@ -253,21 +254,25 @@ function UserMenu({ role }: { role: Role }) {
   const currentUser = getCurrentUser()
   const navigate = useNavigate()
 
-  const fetchNotifications = () => {
+  const fetchNotifications = async () => {
     if (!currentUser) return
     const endpoint =
       role === 'admin'
         ? '/api/admin/notifications.php'
         : `/api/member/notifications.php?member_id=${currentUser.id}`
 
-    fetch(endpoint)
-      .then(res => res.json())
-      .then(data => {
+    try {
+      const res = await apiFetch(endpoint)
+      if (res.ok) {
+        const data = await res.json()
         if (data.success) {
           setNotifications(data.notifications || [])
           setUnreadCount(data.unreadCount || 0)
         }
-      })
+      }
+    } catch (e) {
+      // Non-fatal if offline
+    }
   }
 
   useEffect(() => {
@@ -287,13 +292,13 @@ function UserMenu({ role }: { role: Role }) {
     if (!wasUnread || !currentUser) return
     try {
       if (role === 'admin') {
-        await fetch('/api/admin/notifications.php', {
+        await apiFetch('/api/admin/notifications.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'mark_read', notification_id: notifId }),
         })
       } else {
-        await fetch('/api/member/notifications.php', {
+        await apiFetch('/api/member/notifications.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ member_id: currentUser.id, notification_id: notifId }),

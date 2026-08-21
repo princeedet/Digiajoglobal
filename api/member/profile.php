@@ -10,17 +10,37 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
     exit;
 }
 
-$memberId = $_GET['member_id'] ?? '';
-if (!$memberId) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'member_id is required']);
-    exit;
-}
+$userParam  = trim($_GET['member_id'] ?? $_GET['id'] ?? '');
+$emailParam = trim($_GET['email'] ?? '');
+$nameParam  = trim($_GET['name'] ?? '');
+$userCleanId = preg_replace('/\D/', '', $userParam);
 
 try {
-    $stmt = $db->prepare('SELECT * FROM users WHERE member_id = ? LIMIT 1');
-    $stmt->execute([$memberId]);
+    $stmt = $db->prepare('
+        SELECT * FROM users 
+        WHERE (NULLIF(?, "") IS NOT NULL AND member_id = ?) 
+           OR (NULLIF(?, "") IS NOT NULL AND email = ?) 
+           OR (NULLIF(?, "") IS NOT NULL AND email = ?)
+           OR (NULLIF(?, "") IS NOT NULL AND id = ?)
+           OR (NULLIF(?, "") IS NOT NULL AND name = ?)
+        LIMIT 1
+    ');
+    $stmt->execute([
+        $userParam, $userParam,
+        $userParam, $userParam,
+        $emailParam, $emailParam,
+        $userCleanId, $userCleanId,
+        $nameParam, $nameParam
+    ]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$user) {
+        if ($nameParam) {
+            $stmt = $db->prepare('SELECT * FROM users WHERE name LIKE ? LIMIT 1');
+            $stmt->execute(['%' . $nameParam . '%']);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        }
+    }
 
     if (!$user) {
         http_response_code(404);
@@ -31,32 +51,88 @@ try {
     // Fetch latest savings plan info & sync weeks dynamically from approved payments
     $saved = 0;
     $weeks = 0;
+    $activeHands = 1;
     try {
-        $calcStmt = $db->prepare("
-            SELECT COALESCE(SUM(
-                CASE 
-                    WHEN weeks_covered > 1 THEN weeks_covered
-                    WHEN amount >= 1300 AND amount < 50000 THEN ROUND(amount / 1300)
-                    ELSE 1
-                END
-            ), 0) AS calc_weeks,
-            COALESCE(SUM(amount), 0) AS calc_saved
+        $payStmt = $db->prepare("
+            SELECT 
+                COUNT(*) as count_payments,
+                COALESCE(SUM(COALESCE(weeks_covered, 1)), 0) as calc_weeks,
+                COALESCE(SUM(amount), 0) as calc_saved,
+                MAX(COALESCE(NULLIF(hands, 0), ROUND(amount / 1300), 1)) as calc_hands
             FROM payments
-            WHERE user_id = ? AND status = 'approved' AND payment_type = 'weekly_contribution'
+            WHERE (user_id = ? OR member_id = ?) 
+              AND status IN ('approved', 'confirmed', 'success')
+              AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
+              AND (purpose IS NULL OR (
+                  LOWER(purpose) NOT LIKE '%registration%' 
+                  AND LOWER(purpose) NOT LIKE '%reg fee%' 
+                  AND LOWER(purpose) NOT LIKE '%one-time%'
+                  AND LOWER(purpose) NOT LIKE '%fine%'
+              ))
+              AND amount != 2000
         ");
-        $calcStmt->execute([$user['id']]);
-        $calc = $calcStmt->fetch(PDO::FETCH_ASSOC);
+        $payStmt->execute([$user['id'], $user['member_id']]);
+        $calc = $payStmt->fetch(PDO::FETCH_ASSOC);
 
-        $spStmt = $db->prepare('SELECT SUM(total_saved) as all_saved, SUM(weeks_completed) as all_weeks, MAX(start_date) as last_start_date, COUNT(*) as hands_count FROM savings_plans WHERE user_id = ? AND status = "active"');
-        $spStmt->execute([$user['id']]);
-        $sp = $spStmt->fetch();
-        $startDateStr = ($sp && !empty($sp['last_start_date'])) ? $sp['last_start_date'] : $user['created_at'];
+        $calcWeeks = (int)($calc['calc_weeks'] ?? 0);
+        $calcSaved = (float)($calc['calc_saved'] ?? 0);
+        $calcHands = max(1, (int)($calc['calc_hands'] ?? 1));
 
-        $handsCount = 1;
-        if ($sp) {
-            $saved = (float)$sp['all_saved'];
-            $weeks = (int)$sp['all_weeks'];
-            $handsCount = (int)$sp['hands_count'] ?: 1;
+        $lastPayStmt = $db->prepare("
+            SELECT hands, amount, created_at, paid_at 
+            FROM payments 
+            WHERE (user_id = ? OR member_id = ?)
+              AND status IN ('approved', 'confirmed', 'success')
+              AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
+              AND (purpose IS NULL OR (
+                  LOWER(purpose) NOT LIKE '%registration%' 
+                  AND LOWER(purpose) NOT LIKE '%reg fee%' 
+                  AND LOWER(purpose) NOT LIKE '%one-time%'
+                  AND LOWER(purpose) NOT LIKE '%fine%'
+              ))
+              AND amount != 2000
+            ORDER BY created_at DESC LIMIT 1
+        ");
+        $lastPayStmt->execute([$user['id'], $user['member_id']]);
+        $lastPay = $lastPayStmt->fetch(PDO::FETCH_ASSOC);
+        if ($lastPay) {
+            $amt = (float)$lastPay['amount'];
+            $h = (int)($lastPay['hands'] ?? 1);
+            if ($h <= 1 && $amt > 1300 && fmod($amt, 1300) == 0) {
+                $h = (int)round($amt / 1300);
+            }
+            $activeHands = max(1, $h);
+        } else {
+            $activeHands = $calcHands;
+        }
+
+        $saved = $calcSaved;
+        $weeks = $calcWeeks;
+        if ($weeks === 0 && $saved > 0 && $activeHands > 0) {
+            $weeks = max(1, (int)round($saved / ($activeHands * 1300)));
+        }
+
+        $startDateStr = !empty($user['created_at']) ? $user['created_at'] : date('Y-m-d H:i:s');
+        $startTimestamp = strtotime($startDateStr);
+        $secondsDiff = max(0, time() - $startTimestamp);
+        $weeksElapsed = max(1, min(50, (int)ceil($secondsDiff / (7 * 86400))));
+        $missedWeeks = max(0, $weeksElapsed - $weeks);
+
+        // Auto-suspend if missed 4 weeks
+        if ($missedWeeks >= 4 && $user['status'] !== 'suspended' && $user['status'] !== 'pending_verification') {
+            try {
+                $db->prepare("UPDATE users SET status = 'suspended' WHERE id = ?")->execute([$user['id']]);
+                $user['status'] = 'suspended';
+                // Insert notification
+                $db->prepare("
+                    INSERT INTO notifications (user_id, member_id, title, message, type)
+                    VALUES (?, ?, 'Account Suspended (4 Weeks Defaulted)', ?, 'warning')
+                ")->execute([
+                    $user['id'],
+                    $user['member_id'],
+                    "Your account has been automatically suspended due to 4 weeks of defaulted weekly contributions. Under policy rules, your Double-Up cash bonus has been forfeited. Your saved principal (₦" . number_format($saved, 2) . ") will be available for withdrawal after the 50-week cycle."
+                ]);
+            } catch (Exception $e) {}
         }
 
         $startDateObj = new DateTime($startDateStr);
@@ -65,8 +141,11 @@ try {
         $nextDueDate = $nextDueObj->format('l, j M');
     } catch (PDOException $e) {
         $nextDueDate = 'Saturday, 18 Jul';
-        $handsCount = 1;
+        $activeHands = 1;
+        $missedWeeks = 0;
     }
+
+    $isSuspended = ($user['status'] === 'suspended');
 
     echo json_encode([
         'success' => true,
@@ -81,10 +160,14 @@ try {
             'status'              => $user['status'],
             'plan'                => $user['plan_type'] ?? 'Double Up',
             'weeks'               => (int)$weeks,
-            'activeHands'         => (int)$handsCount,
+            'activeHands'         => (int)$activeHands,
+            'missedWeeks'         => (int)($missedWeeks ?? 0),
+            'isSuspended'         => $isSuspended,
             'nextDueDate'         => $nextDueDate,
             'role'                => 'member',
             'needsSecurityUpdate' => (bool)($user['needs_security_update'] ?? 1),
+            'isFirstPayment'      => ($calcWeeks == 0 && $calcSaved == 0 && (int)($calc['count_payments'] ?? 0) == 0),
+            'hasEstablishedHands' => ($calcWeeks > 0 || $calcSaved > 0 || (int)($calc['count_payments'] ?? 0) > 0),
         ]
     ]);
 } catch (Exception $e) {

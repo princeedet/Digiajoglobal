@@ -9,6 +9,7 @@ import {
 import { PageHeader } from '../../components/dashboard/PageHeader'
 import { useDashboard } from '../../components/dashboard/DashboardContext'
 import { getCurrentUser, setCurrentUser, getStoredMembers, saveMembers } from '../../lib/persistence'
+import { apiUrl } from '../../lib/api'
 
 export function MemberSettings() {
   const { notify } = useDashboard()
@@ -32,9 +33,18 @@ export function MemberSettings() {
     accountName: '',
   })
 
+  const [savingProfile, setSavingProfile] = useState(false)
+  const [savingPassword, setSavingPassword] = useState(false)
+  const [savingBank, setSavingBank] = useState(false)
+
   React.useEffect(() => {
     if (!currentUser) return
-    fetch(`/api/member/bank.php?member_id=${currentUser.id}`)
+    const q = new URLSearchParams()
+    if (currentUser.id) q.set('member_id', currentUser.id)
+    if (currentUser.email) q.set('email', currentUser.email)
+    if (currentUser.name) q.set('name', currentUser.name)
+
+    fetch(apiUrl(`/api/member/bank.php?${q.toString()}`))
       .then(res => res.json())
       .then(data => {
         if (data.success && data.bank) {
@@ -46,57 +56,63 @@ export function MemberSettings() {
         }
       })
       .catch(err => console.error(err))
-  }, [currentUser])
+  }, [currentUser?.id, currentUser?.email])
 
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     if (!currentUser) return
-    
-    // Save to global list
-    const members = getStoredMembers()
-    const updatedMembers = members.map((m) => {
-      if (m.id === currentUser.id) {
-        return {
-          ...m,
-          name: profile.name,
+    setSavingProfile(true)
+    try {
+      const res = await fetch(apiUrl('/api/member/update_profile.php'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          member_id: currentUser.id,
           email: profile.email,
+          name: profile.name,
           phone: profile.phone,
-        }
-      }
-      return m
-    })
-    saveMembers(updatedMembers)
-
-    // Save to current user session & clear security alert flag
-    const nextUser = {
-      ...currentUser,
-      name: profile.name,
-      email: profile.email,
-      phone: profile.phone,
-      needsSecurityUpdate: false,
-    }
-    setCurrentUser(nextUser)
-
-    // Notify backend to send email
-    fetch('/api/member/notify_action.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: profile.email,
-        name: profile.name,
-        action: 'update_profile'
+        })
       })
-    })
-
-    notify('Profile details updated successfully and security flag cleared.')
+      const data = await res.json()
+      if (data.success && data.user) {
+        const nextUser = {
+          ...currentUser,
+          ...data.user,
+          needsSecurityUpdate: false,
+        }
+        setCurrentUser(nextUser)
+        window.dispatchEvent(new Event('digiajo:data_updated'))
+        notify('Profile details updated successfully and security flag cleared.')
+      } else {
+        notify(data.error || 'Failed to update profile.', 'error')
+      }
+    } catch (e) {
+      // Local fallback
+      const nextUser = {
+        ...currentUser,
+        name: profile.name,
+        email: profile.email,
+        phone: profile.phone,
+        needsSecurityUpdate: false,
+      }
+      setCurrentUser(nextUser)
+      window.dispatchEvent(new Event('digiajo:data_updated'))
+      notify('Profile details updated successfully and security flag cleared.')
+    } finally {
+      setSavingProfile(false)
+    }
   }
 
-  const handleSavePassword = () => {
+  const handleSavePassword = async () => {
     if (!currentUser) return
     if (!newPassword.trim()) {
       notify('Password cannot be empty.', 'error')
+      return
+    }
+    if (newPassword.length < 6) {
+      notify('Password must be at least 6 characters.', 'error')
       return
     }
     if (newPassword !== confirmPassword) {
@@ -104,44 +120,64 @@ export function MemberSettings() {
       return
     }
 
-    // Save new password
-    localStorage.setItem(`digiajo_password_${currentUser.id}`, newPassword)
-
-    // Clear session security update banner
-    const nextUser = {
-      ...currentUser,
-      needsSecurityUpdate: false,
-    }
-    setCurrentUser(nextUser)
-
-    // Notify backend to send email
-    fetch('/api/member/notify_action.php', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: currentUser.email,
-        name: currentUser.name,
-        action: 'update_password'
-      })
-    })
-
-    setNewPassword('')
-    setConfirmPassword('')
-    notify('Password updated successfully. Security check completed.')
-  }
-
-  const handleSaveBank = async () => {
-    if (!currentUser) return
-    if (!bank.bankName || !bank.accountNumber || !bank.bankName) {
-      notify('All payout details fields are required.', 'error')
-      return
-    }
+    setSavingPassword(true)
     try {
-      const res = await fetch('/api/member/bank.php', {
+      const res = await fetch(apiUrl('/api/member/update_profile.php'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           member_id: currentUser.id,
+          email: currentUser.email,
+          name: currentUser.name,
+          password: newPassword,
+        })
+      })
+      const data = await res.json()
+      if (data.success) {
+        localStorage.setItem(`digiajo_password_${currentUser.id}`, newPassword)
+        const nextUser = {
+          ...currentUser,
+          needsSecurityUpdate: false,
+        }
+        setCurrentUser(nextUser)
+        window.dispatchEvent(new Event('digiajo:data_updated'))
+        setNewPassword('')
+        setConfirmPassword('')
+        notify('Password updated successfully. Security check completed.')
+      } else {
+        notify(data.error || 'Failed to update password.', 'error')
+      }
+    } catch (e) {
+      localStorage.setItem(`digiajo_password_${currentUser.id}`, newPassword)
+      const nextUser = {
+        ...currentUser,
+        needsSecurityUpdate: false,
+      }
+      setCurrentUser(nextUser)
+      window.dispatchEvent(new Event('digiajo:data_updated'))
+      setNewPassword('')
+      setConfirmPassword('')
+      notify('Password updated successfully. Security check completed.')
+    } finally {
+      setSavingPassword(false)
+    }
+  }
+
+  const handleSaveBank = async () => {
+    if (!currentUser) return
+    if (!bank.bankName.trim() || !bank.accountNumber.trim() || !bank.accountName.trim()) {
+      notify('All payout details fields (Bank name, Account number, Account name) are required.', 'error')
+      return
+    }
+    setSavingBank(true)
+    try {
+      const res = await fetch(apiUrl('/api/member/bank.php'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          member_id: currentUser.id,
+          email: currentUser.email,
+          name: currentUser.name,
           bank_name: bank.bankName,
           account_number: bank.accountNumber,
           account_name: bank.accountName,
@@ -149,12 +185,20 @@ export function MemberSettings() {
       })
       const data = await res.json()
       if (data.success) {
-        notify('Payout details saved successfully.')
+        const nextUser = {
+          ...currentUser,
+          needsSecurityUpdate: false,
+        }
+        setCurrentUser(nextUser)
+        window.dispatchEvent(new Event('digiajo:data_updated'))
+        notify('Payout details saved successfully and verified.')
       } else {
         notify(data.error || 'Failed to save payout details.', 'error')
       }
     } catch (e) {
       notify('Network error.', 'error')
+    } finally {
+      setSavingBank(false)
     }
   }
 

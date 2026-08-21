@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react'
 import { PageHeader } from '../../components/dashboard/PageHeader'
 import { NAIRA } from '../../lib/brand'
 import { StatusBadge } from '../../components/dashboard/StatusBadge'
+import { apiFetch } from '../../lib/api'
 
 interface AdminReferral {
   id: string
@@ -19,13 +20,14 @@ export function AdminReferrals() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetch('/api/admin/referrals.php')
-      .then(res => res.json())
+    apiFetch('/api/admin/referrals.php')
+      .then(res => res.ok ? res.json() : { success: false })
       .then(data => {
         if (data.success) {
           setReferrals(data.referrals || [])
         }
       })
+      .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
 

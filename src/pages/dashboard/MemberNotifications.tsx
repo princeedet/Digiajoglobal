@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { BellIcon } from 'lucide-react'
 import { PageHeader } from '../../components/dashboard/PageHeader'
 import { getCurrentUser } from '../../lib/persistence'
+import { apiUrl } from '../../lib/api'
 
 export function MemberNotifications() {
   const [notifications, setNotifications] = useState<any[]>([])
@@ -14,7 +15,7 @@ export function MemberNotifications() {
     if (!currentUser) return
     const fetchNotifications = async () => {
       try {
-        const res = await fetch(`/api/member/notifications.php?member_id=${currentUser.id}`)
+        const res = await fetch(apiUrl(`/api/member/notifications.php?member_id=${currentUser.id}`))
         const data = await res.json()
         if (data.success) {
           setNotifications(data.notifications || [])

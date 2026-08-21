@@ -49,21 +49,24 @@ try {
     $stmt = $db->query("SELECT SUM(amount) as total FROM payouts WHERE status IN ('pending', 'processing')");
     $outgoingPayouts = (float)$stmt->fetch()['total'] ?? 0;
     
-    // Recent payments (for ledger)
+    // Recent payments (for ledger / dashboard)
     $stmt = $db->query("
-            SELECT 
-                p.payment_ref as id, 
-                p.payment_ref as reference, 
-                p.amount, 
-            p.channel, 
-            p.status, 
-            p.purpose, 
-            DATE_FORMAT(p.paid_at, '%d %b %Y, %h:%i %p') as date,
-            p.member_name as member,
-            p.member_id as memberId
+        SELECT 
+            p.id as _dbId,
+            COALESCE(NULLIF(p.payment_ref, ''), CONCAT('PAY-', p.id)) as id, 
+            COALESCE(NULLIF(p.payment_ref, ''), CONCAT('PAY-', p.id)) as reference, 
+            p.amount, 
+            COALESCE(p.channel, 'bank_transfer') as channel, 
+            COALESCE(p.status, 'pending') as status, 
+            COALESCE(p.purpose, 'Registration Fee') as purpose, 
+            DATE_FORMAT(COALESCE(p.paid_at, p.created_at, NOW()), '%d %b %Y, %h:%i %p') as date,
+            COALESCE(p.member_name, u.name, 'Member') as member,
+            COALESCE(p.member_id, u.member_id, CONCAT('DA-', p.user_id)) as memberId,
+            COALESCE(p.payment_type, 'registration_fee') as payment_type
         FROM payments p
+        LEFT JOIN users u ON u.id = p.user_id
         ORDER BY p.created_at DESC
-        LIMIT 5
+        LIMIT 10
     ");
     $recentPayments = $stmt->fetchAll();
 

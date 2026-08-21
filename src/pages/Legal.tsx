@@ -6,29 +6,33 @@ interface LegalProps {
 }
 const content = {
   terms: {
-    title: 'Terms & Conditions',
+    title: 'Terms & Conditions — DigiAjo Double Up Plan',
     intro:
-      'These terms govern your use of DigiAjo Global savings and DigiMart co-ownership products. By registering, you agree to the following.',
+      'Savings Structure, Double-Up Reward & Default Policy. These terms govern your use of DigiAjo Global savings and investment accounts. By registering, you agree to the following.',
     sections: [
       {
-        h: '1. Registration',
-        p: 'A one-time, non-refundable registration fee of ₦2,000 applies to open Double Up savings accounts. This fee permits opening of multiple savings accounts under one member profile.',
+        h: '1. How DigiAjo Double Up Plan Works',
+        p: 'DigiAjo Double Up Plan is designed to help members build a consistent savings habit while rewarding commitment and discipline. Every member begins by paying a one-time registration fee of ₦2,000. After registration, members choose their savings capacity based on the number of hands they want to operate.',
       },
       {
-        h: '2. Double Up Savings Obligations',
-        p: 'Members commit to depositing ₦1,300 per account every Saturday for 50 weeks. All contributions must be received by 11:59 p.m. each Saturday.',
+        h: '2. Single Hand & Multiple Hand Savings Plans',
+        p: 'A single hand means ₦1,300 every Saturday for 50 weeks (₦1,300 × 50 = ₦65,000). Upon successful completion of the 50-week savings cycle, ₦65,000 savings becomes ₦130,000 through the DigiAjo Double-Up Reward. Members who have higher savings capacity can operate multiple hands (e.g. 10 hands: ₦13,000 weekly × 50 weeks = ₦650,000, which becomes ₦1,300,000 upon successful completion).',
       },
       {
-        h: '3. Fines & Suspension',
-        p: 'Missing a week attracts a 100% fine (₦1,300 per missed week). Accounts with 4 or more missed weeks will be suspended. If outstanding savings and fines are not cleared by the 50th week, the member is cashed out only the exact amount saved, forfeiting the 100% double-up match and food rewards.',
+        h: '3. Payment Deadline & Default Policy',
+        p: 'All weekly contributions must be completed on or before 11:59 p.m. every Saturday. Once the payment deadline passes and it becomes 12:00 a.m. Sunday, the contribution is considered a default. Any missed weekly contribution attracts a 100% Default Penalty (the missed contribution amount is doubled). For 1 Hand: ₦1,300 contribution + ₦1,300 penalty = ₦2,600 to clear default. For 10 Hands: ₦13,000 contribution + ₦13,000 penalty = ₦26,000 to clear default.',
       },
       {
-        h: '4. DigiMart Co-ownership',
-        p: 'Units are sold at a fixed ₦100,000 each. Returns of up to 50% are projected over a 12-month period and are subject to retail performance. Each unit is issued with a legally binding Investment Certificate.',
+        h: '4. Account Suspension Policy & Outcomes',
+        p: 'If a member defaults for up to 4 consecutive weeks, the account will automatically be suspended and become inactive until reviewed. A suspended account remains inactive until the end of the applicable cycle. Where a member fails to resolve defaults: at the end of the cycle period, only the member’s actual savings contributions will be paid back. The Double-Up Reward will not apply, and no additional reward or bonus will be attached.',
       },
       {
-        h: '5. Referrals',
-        p: 'Referral commissions (₦1,000 per Double Up referral, 5% per DigiMart unit referral) are paid according to the published schedule and require successful, verified referrals.',
+        h: '5. DigiAjo Double-Up Principle',
+        p: 'The Double-Up Reward is designed to recognize: Consistency, Commitment, Financial discipline, and Completion of the savings journey. Members who stay committed throughout the 50-week cycle enjoy the full benefits of the DigiAjo Double Up Plan.',
+      },
+      {
+        h: '6. Referral Commissions & Co-ownership',
+        p: 'Referral commissions (₦1,000 per Double Up referral, 5% per DigiMart unit referral) are paid according to the published schedule and require successful, verified referrals. DigiMart units are sold at ₦100,000 each with up to 50% ROI over 12 months, backed by an Investment Certificate.',
       },
     ],
   },

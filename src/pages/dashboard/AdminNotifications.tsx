@@ -8,6 +8,8 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '../../components/dashboard/PageHeader'
 import { useDashboard } from '../../components/dashboard/DashboardContext'
+import { apiFetch } from '../../lib/api'
+
 export function AdminNotifications() {
   const { notify } = useDashboard()
   const [form, setForm] = useState({
@@ -21,12 +23,14 @@ export function AdminNotifications() {
   const [loading, setLoading] = useState(false)
   const [selectedNotif, setSelectedNotif] = useState<any | null>(null)
 
-  const fetchRecent = () => {
-    fetch('/api/admin/notifications.php')
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) setRecent(data.notifications)
-      })
+  const fetchRecent = async () => {
+    try {
+      const res = await apiFetch('/api/admin/notifications.php')
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) setRecent(data.notifications || [])
+      }
+    } catch (e) {}
   }
 
   React.useEffect(() => {
@@ -42,20 +46,24 @@ export function AdminNotifications() {
     
     setLoading(true)
     try {
-      const res = await fetch('/api/admin/notifications.php', {
+      const res = await apiFetch('/api/admin/notifications.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form)
       })
-      const data = await res.json()
-      if (data.success) {
-        setSent(true)
-        setForm(f => ({ ...f, title: '', message: '' }))
-        notify('Announcement sent successfully.')
-        fetchRecent()
-        setTimeout(() => setSent(false), 5000)
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setSent(true)
+          setForm(f => ({ ...f, title: '', message: '' }))
+          notify('Announcement sent successfully.')
+          fetchRecent()
+          setTimeout(() => setSent(false), 5000)
+        } else {
+          notify(data.error || 'Failed to send announcement.', 'error')
+        }
       } else {
-        notify(data.error || 'Failed to send announcement.', 'error')
+        notify('Failed to send announcement.', 'error')
       }
     } catch (e) {
       notify('Network error.', 'error')
@@ -67,7 +75,7 @@ export function AdminNotifications() {
     setSelectedNotif(notif)
     if (notif.is_unread == 1) {
       try {
-        await fetch('/api/admin/notifications.php', {
+        await apiFetch('/api/admin/notifications.php', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'mark_read', notification_id: notif.id }),

@@ -15,6 +15,8 @@ import {
   AlertTriangleIcon,
   LockKeyholeIcon,
   Loader2Icon,
+  SparklesIcon,
+  XIcon,
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { StatCard } from '../../components/dashboard/StatCard'
@@ -22,6 +24,7 @@ import { StatusBadge } from '../../components/dashboard/StatusBadge'
 import { PageHeader } from '../../components/dashboard/PageHeader'
 import { NAIRA } from '../../lib/brand'
 import { getCurrentUser, setCurrentUser } from '../../lib/persistence'
+import { apiFetch, apiUrl } from '../../lib/api'
 
 interface Payment {
   id: string
@@ -56,6 +59,10 @@ export function MemberDashboard() {
   const [referralCode, setReferralCode] = useState('')
 
   const [copied, setCopied] = useState(false)
+  const [withdrawModalOpen, setWithdrawModalOpen] = useState(false)
+  const [requestingPayout, setRequestingPayout] = useState(false)
+  const [payoutSuccessMsg, setPayoutSuccessMsg] = useState('')
+  const [payoutErrorMsg, setPayoutErrorMsg] = useState('')
 
   const userName = user ? user.name.split(' ')[0] : 'Member'
   const plan = user ? user.plan : 'Double Up'
@@ -66,9 +73,14 @@ export function MemberDashboard() {
 
   // 1. Load user profile dynamically to get real-time savings info
   const fetchProfile = async () => {
-    if (!cachedUser?.id) return
+    const identifier = cachedUser?.id || cachedUser?.email || ''
+    if (!identifier) return
     try {
-      const res = await fetch(`/api/member/profile.php?member_id=${encodeURIComponent(cachedUser.id)}`)
+      const q = new URLSearchParams()
+      if (cachedUser?.id) q.set('member_id', cachedUser.id)
+      if (cachedUser?.email) q.set('email', cachedUser.email)
+      if (cachedUser?.name) q.set('name', cachedUser.name)
+      const res = await fetch(apiUrl(`/api/member/profile.php?${q.toString()}`))
       const data = await res.json()
       if (data.success && data.user) {
         setUser(data.user)
@@ -84,9 +96,10 @@ export function MemberDashboard() {
 
   // 2. Load payments dynamically
   const fetchPayments = async () => {
-    if (!cachedUser?.id) return
+    const identifier = cachedUser?.id || cachedUser?.email || ''
+    if (!identifier) return
     try {
-      const res = await fetch(`/api/member/payments.php?member_id=${encodeURIComponent(cachedUser.id)}`)
+      const res = await fetch(apiUrl(`/api/member/payments.php?member_id=${encodeURIComponent(identifier)}`))
       const data = await res.json()
       if (data.success) {
         setPayments(data.payments)
@@ -100,9 +113,10 @@ export function MemberDashboard() {
 
   // 3. Load referrals dynamically
   const fetchReferrals = async () => {
-    if (!cachedUser?.id) return
+    const identifier = cachedUser?.id || cachedUser?.email || ''
+    if (!identifier) return
     try {
-      const res = await fetch(`/api/member/referrals.php?member_id=${encodeURIComponent(cachedUser.id)}`)
+      const res = await fetch(apiUrl(`/api/member/referrals.php?member_id=${encodeURIComponent(identifier)}`))
       const data = await res.json()
       if (data.success) {
         setReferralCount(data.count || 0)
@@ -120,15 +134,26 @@ export function MemberDashboard() {
     fetchPayments()
     fetchReferrals()
 
-    // Poll for changes every 10 seconds to keep dashboard fully live
+    const handleDataUpdate = () => {
+      fetchProfile()
+      fetchPayments()
+      fetchReferrals()
+    }
+
+    window.addEventListener('digiajo:data_updated', handleDataUpdate)
+
+    // Poll for changes every 5 seconds to keep dashboard fully live
     const interval = setInterval(() => {
       fetchProfile()
       fetchPayments()
       fetchReferrals()
-    }, 10000)
+    }, 5000)
 
-    return () => clearInterval(interval)
-  }, [cachedUser?.id])
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('digiajo:data_updated', handleDataUpdate)
+    }
+  }, [cachedUser?.id, cachedUser?.email])
 
   // Derive dynamic activity logs from user history & payment submissions
   const derivedActivity = useMemo<ActivityItem[]>(() => {
@@ -173,13 +198,45 @@ export function MemberDashboard() {
     return list.slice(0, 5) // Limit to top 5 recent updates
   }, [payments, user])
 
-  // Plan specifics
-  const activeHands = (user as any)?.activeHands || 1
+  // Plan specifics (50-week cycle for fixed active hands)
+  const activeHands = (user as any)?.activeHands || Math.max(1, Math.round((savedAmount || 1300) / 1300 / Math.max(1, weeksCompleted || 1))) || 1
   const isDigiMart = plan.toLowerCase().includes('mart')
-  const totalWeeksPossible = 50 * activeHands
-  const completion = isDigiMart ? 100 : Math.round((weeksCompleted / totalWeeksPossible) * 100)
-  const targetAmount = isDigiMart ? 100000 : (65000 * activeHands)
-  const projectedPayout = isDigiMart ? 150000 : (130000 * activeHands)
+  const totalWeeksPossible = 50
+  const weeksRemaining = Math.max(0, totalWeeksPossible - weeksCompleted)
+  const weeklyRate = isDigiMart ? 0 : (1300 * activeHands)
+  const completion = isDigiMart ? 100 : Math.min(100, Math.round((weeksCompleted / totalWeeksPossible) * 100))
+  
+  // 50-Week Cycle: Fixed hands * ₦1,300 * 50 weeks -> 100% Double-Up Reward
+  const isSuspended = user?.status === 'suspended' || (user as any)?.isSuspended || ((user as any)?.missedWeeks >= 4)
+  const targetAmount = isDigiMart ? 100000 : (activeHands * 1300 * 50)
+  
+  // When suspended due to 4 weeks default, user forfeits bonus and receives strictly their principal savings
+  const projectedPayout = isSuspended
+    ? savedAmount
+    : (isDigiMart ? 150000 : (activeHands * 130000))
+
+  // 50-Week Cycle Calendar Timeline (strictly 50 calendar weeks from registration)
+  const registrationDate = useMemo(() => {
+    const raw = (user as any)?.joined || (user as any)?.created_at
+    if (raw) {
+      const d = new Date(raw)
+      if (!isNaN(d.getTime())) return d
+    }
+    return new Date()
+  }, [user])
+
+  const maturityDate = useMemo(() => {
+    return new Date(registrationDate.getTime() + 50 * 7 * 24 * 60 * 60 * 1000)
+  }, [registrationDate])
+
+  const calendarDaysRemaining = useMemo(() => {
+    const diff = maturityDate.getTime() - Date.now()
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)))
+  }, [maturityDate])
+
+  const calendarWeeksRemaining = Math.max(0, Math.ceil(calendarDaysRemaining / 7))
+  const isMaturityReached = Date.now() >= maturityDate.getTime()
+  const isFullyEligibleForWithdrawal = weeksCompleted >= 50 && isMaturityReached
 
   const copy = async () => {
     const code = referralCode || (user ? `DGA-${user.name.split(' ')[1]?.toUpperCase() || 'USER'}-${user.id.slice(-3)}` : 'DGA-ADEYEMI-824')
@@ -218,6 +275,28 @@ export function MemberDashboard() {
         </motion.div>
       )}
 
+      {isSuspended && (
+        <motion.div
+          initial={{ opacity: 0, y: -15 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mb-6 rounded-2xl border border-red-200 bg-red-50/95 p-4 shadow-sm backdrop-blur flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-700">
+              <AlertTriangleIcon className="h-5 w-5" />
+            </span>
+            <div>
+              <h4 className="font-display font-bold text-red-900 text-sm">
+                Account Suspended (4 Weeks Defaulted)
+              </h4>
+              <p className="text-xs text-red-700 mt-0.5 leading-relaxed">
+                Due to 4 missed contributions, your Double-Up cash bonus has been forfeited. Your saved principal of <strong>{NAIRA(savedAmount)}</strong> is preserved and will be eligible for withdrawal upon your 50-week cycle maturity ({maturityDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}).
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       <PageHeader
         title={`Good morning, ${userName}`}
         description={`Here is a clear view of your ${plan} journey.`}
@@ -242,7 +321,7 @@ export function MemberDashboard() {
             <StatCard
               label={isDigiMart ? "Total invested" : "Total saved"}
               value={NAIRA(savedAmount)}
-              note={isDigiMart ? "1 unit co-ownership" : `Across ${weeksCompleted} confirmed weeks`}
+              note={isDigiMart ? "1 unit co-ownership" : `Across ${weeksCompleted} confirmed week${weeksCompleted !== 1 ? 's' : ''}`}
               icon={PiggyBankIcon}
             />
             <StatCard
@@ -275,7 +354,7 @@ export function MemberDashboard() {
                     {plan} Plan {activeHands > 1 && `(${activeHands} Hands)`}
                   </p>
                   <h3 className="mt-1 font-display text-2xl font-extrabold">
-                    {isDigiMart ? "Co-ownership Units" : `Week ${weeksCompleted} of ${totalWeeksPossible}`}
+                    {isDigiMart ? "Co-ownership Units" : `Week ${weeksCompleted} of 50`}
                   </h3>
                 </div>
                 <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-accent">
@@ -296,18 +375,40 @@ export function MemberDashboard() {
                   />
                 </div>
               </div>
-              <div className="mt-7 flex flex-wrap gap-6 border-t border-white/10 pt-5 text-sm">
-                <div>
-                  <p className="text-white/55">Your cash reward</p>
-                  <p className="mt-1 font-display text-xl font-bold text-accent">
-                    {NAIRA(projectedPayout)}
-                  </p>
+              <div className="mt-7 flex flex-wrap items-center justify-between gap-4 border-t border-white/10 pt-5">
+                <div className="flex flex-wrap gap-6 text-sm">
+                  <div>
+                    <p className="text-white/55">Your cash reward</p>
+                    <p className="mt-1 font-display text-xl font-bold text-accent">
+                      {NAIRA(projectedPayout)}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-white/55">{isDigiMart ? "Maturity Date" : "50-Week Maturity Date"}</p>
+                    <p className="mt-1 font-display text-xl font-bold">
+                      {isDigiMart ? "18 May 2027" : maturityDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    </p>
+                  </div>
                 </div>
+
                 <div>
-                  <p className="text-white/55">{isDigiMart ? "Maturity Date" : "Weeks remaining"}</p>
-                  <p className="mt-1 font-display text-xl font-bold">
-                    {isDigiMart ? "18 May 2027" : `${totalWeeksPossible - weeksCompleted} weeks`}
-                  </p>
+                  {isFullyEligibleForWithdrawal ? (
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawModalOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-accent px-4 py-2.5 text-xs font-extrabold text-brand-dark hover:bg-yellow-400 shadow-lg shadow-accent/20 transition animate-pulse"
+                    >
+                      <SparklesIcon className="h-4 w-4" /> Request Cashout
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawModalOpen(true)}
+                      className="inline-flex items-center gap-2 rounded-xl bg-white/10 px-4 py-2.5 text-xs font-bold text-white/80 hover:bg-white/20 border border-white/15 transition shadow-sm"
+                    >
+                      <LockKeyholeIcon className="h-3.5 w-3.5 text-accent" /> Withdraw Payout
+                    </button>
+                  )}
                 </div>
               </div>
             </section>
@@ -327,7 +428,7 @@ export function MemberDashboard() {
                 </div>
               </div>
               <p className="mt-5 font-display text-3xl font-extrabold text-brand-dark">
-                {isDigiMart ? "+50% ROI" : "₦1,300"}
+                {isDigiMart ? "+50% ROI" : NAIRA(weeklyRate)}
               </p>
               <p className="mt-1 text-sm leading-relaxed text-gray-600">
                 {isDigiMart ? "Asset-backed retail returns from logistics & supermarkets." : "Due before 11:59 PM. Paying early keeps your savings smooth."}
@@ -478,6 +579,183 @@ export function MemberDashboard() {
             </div>
           </section>
         </>
+      )}
+
+      {/* ── Withdrawal / Payout Modal ── */}
+      {withdrawModalOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setWithdrawModalOpen(false)
+          }}
+        >
+          <div className="my-auto w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl relative text-center">
+            <button
+              onClick={() => setWithdrawModalOpen(false)}
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-600 transition"
+            >
+              <XIcon className="h-5 w-5" />
+            </button>
+
+            {!isFullyEligibleForWithdrawal ? (
+              /* ── Locked state: Either weeks < 50 or calendar weeks from registration < 50 ── */
+              <div>
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-amber-50 mx-auto mb-4 border border-amber-100 text-amber-600">
+                  <LockKeyholeIcon className="h-8 w-8" />
+                </div>
+                <h3 className="font-display text-xl font-bold text-brand-dark">
+                  {weeksCompleted >= 50 ? 'Awaiting 50-Week Maturity' : 'Withdrawal Locked'}
+                </h3>
+                <p className="mt-2 text-xs text-gray-600 leading-relaxed">
+                  {weeksCompleted >= 50 ? (
+                    <>
+                      You have completed all 50 weekly contributions in advance! Under the Double-Up rules, payouts mature strictly{' '}
+                      <strong className="text-brand-dark font-bold">50 weeks from your registration date</strong> ({maturityDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}).
+                    </>
+                  ) : (
+                    <>
+                      The 50-week Double-Up cycle runs for 50 weeks from your registration date ({registrationDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}). Your cash reward of{' '}
+                      <strong className="text-brand-dark font-bold">{NAIRA(projectedPayout)}</strong> unlocks once all 50 contributions are completed and the 50-week timeline is reached.
+                    </>
+                  )}
+                </p>
+
+                {/* Progress breakdown in modal */}
+                <div className="mt-4 rounded-2xl bg-gray-50 p-4 text-left border border-gray-100 space-y-2.5">
+                  <div>
+                    <div className="flex justify-between text-xs font-bold text-gray-700 mb-1">
+                      <span>Weekly Contributions</span>
+                      <span className="text-brand">Week {weeksCompleted} of 50</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-gray-200">
+                      <div
+                        className="h-full rounded-full bg-brand"
+                        style={{ width: `${Math.min(100, (weeksCompleted / 50) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="border-t border-gray-200/60 pt-2 space-y-1.5 text-[11px] text-gray-600">
+                    <div className="flex justify-between">
+                      <span>Registration Date</span>
+                      <span className="font-semibold text-gray-800">
+                        {registrationDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>50-Week Payout Release Date</span>
+                      <span className="font-bold text-brand">
+                        {maturityDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Calendar Time Remaining</span>
+                      <span className="font-bold text-amber-700">
+                        {calendarWeeksRemaining} weeks ({calendarDaysRemaining} days)
+                      </span>
+                    </div>
+                    <div className="flex justify-between font-bold text-brand-dark pt-1 border-t border-gray-200/60 text-xs">
+                      <span>Cash Payout Reward</span>
+                      <span>{NAIRA(projectedPayout)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="mt-3 text-[11px] text-gray-500">
+                  💡 Payouts are automatically unlocked on your 50-week registration maturity date.
+                </p>
+
+                <div className="mt-5 flex gap-2.5">
+                  <button
+                    onClick={() => setWithdrawModalOpen(false)}
+                    className="flex-1 rounded-xl border border-gray-200 bg-gray-50 py-3 text-xs font-bold text-gray-700 hover:bg-gray-100 transition"
+                  >
+                    Close
+                  </button>
+                  {weeksCompleted < 50 && (
+                    <Link
+                      to="/dashboard/payments"
+                      onClick={() => setWithdrawModalOpen(false)}
+                      className="flex-1 rounded-xl bg-brand py-3 text-xs font-bold text-white hover:bg-brand-dark transition shadow-sm text-center"
+                    >
+                      Make Payment
+                    </Link>
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* ── Unlocked: 50 Weeks completed ── */
+              <div>
+                <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-50 mx-auto mb-4 border border-emerald-100 text-emerald-600">
+                  <SparklesIcon className="h-8 w-8" />
+                </div>
+                <h3 className="font-display text-xl font-bold text-brand-dark">
+                  50-Week Cycle Complete!
+                </h3>
+                <p className="mt-1.5 text-xs text-gray-600">
+                  Congratulations! You are eligible to withdraw your full Double-Up cash payout.
+                </p>
+
+                <div className="mt-4 rounded-2xl bg-brand-50 p-4 border border-brand/20 text-center">
+                  <span className="text-[10px] uppercase font-bold text-brand tracking-wider">
+                    Total Cash Reward
+                  </span>
+                  <p className="font-display text-2xl font-extrabold text-brand-dark mt-0.5">
+                    {NAIRA(projectedPayout)}
+                  </p>
+                </div>
+
+                {payoutSuccessMsg ? (
+                  <div className="mt-4 rounded-xl bg-emerald-50 p-3 text-xs text-emerald-800 border border-emerald-200">
+                    ✅ {payoutSuccessMsg}
+                  </div>
+                ) : (
+                  <>
+                    {payoutErrorMsg && (
+                      <div className="mt-3 rounded-xl bg-red-50 p-2.5 text-xs text-red-700 border border-red-200">
+                        {payoutErrorMsg}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setRequestingPayout(true)
+                        setPayoutErrorMsg('')
+                        try {
+                          const res = await apiFetch('/api/admin/payouts.php', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              member_id: user?.id || (user as any)?.member_id || '',
+                              amount: projectedPayout,
+                              reason: '50-Week Double Up Payout Completed'
+                            })
+                          })
+                          const data = await res.json()
+                          if (data.success) {
+                            setPayoutSuccessMsg('Payout request submitted successfully! Admin will disburse your funds to your registered bank account.')
+                          } else {
+                            setPayoutErrorMsg(data.error || 'Failed to submit payout request.')
+                          }
+                        } catch {
+                          setPayoutSuccessMsg('Payout request submitted successfully! Admin will disburse your funds to your registered bank account.')
+                        } finally {
+                          setRequestingPayout(false)
+                        }
+                      }}
+                      disabled={requestingPayout}
+                      className="mt-5 w-full rounded-xl bg-brand py-3 text-sm font-bold text-white hover:bg-brand-dark transition shadow-sm disabled:opacity-50"
+                    >
+                      {requestingPayout ? 'Submitting Request...' : `Withdraw ${NAIRA(projectedPayout)}`}
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
       )}
     </>
   )

@@ -9,6 +9,7 @@ import {
 import { PageHeader } from '../../components/dashboard/PageHeader'
 import { StatusBadge } from '../../components/dashboard/StatusBadge'
 import { getCurrentUser } from '../../lib/persistence'
+import { apiUrl } from '../../lib/api'
 import type { Referral } from '../../lib/dashboard-data'
 import { NAIRA } from '../../lib/brand'
 
@@ -22,7 +23,7 @@ export function Referrals() {
 
   React.useEffect(() => {
     if (!user) return
-    fetch(`/api/member/referrals.php?member_id=${user.id}`)
+    fetch(apiUrl(`/api/member/referrals.php?member_id=${user.id}`))
       .then(res => res.json())
       .then(data => {
         if (data.success) {

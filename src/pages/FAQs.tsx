@@ -7,36 +7,36 @@ import { Button } from '../components/ui/Button'
 import { BRAND } from '../lib/brand'
 const faqs = [
   {
-    q: 'How much do I need to start with Double Up?',
-    a: 'A one-time, non-refundable registration fee of ₦2,000, then ₦1,300 saved every Saturday for 50 weeks per account.',
+    q: 'How much do I need to start with the DigiAjo Double Up Plan?',
+    a: 'Every member begins by paying a one-time registration fee of ₦2,000. After registration, you choose your savings capacity: Single Hand (₦1,300 every Saturday) or Multiple Hands (e.g., 10 hands = ₦13,000 every Saturday).',
   },
   {
-    q: 'What do I receive at the end of 50 weeks?',
-    a: 'You cash out ₦130,000 (a 100% match on your ₦65,000 saved) plus bonus grocery food items.',
+    q: 'What is the savings period and Double-Up Reward calculation?',
+    a: 'The saving period is 50 weeks. For a Single Hand: ₦1,300 × 50 weeks = ₦65,000 saved, which becomes ₦130,000 through the DigiAjo Double-Up Reward. For 10 Hands: ₦13,000 × 50 weeks = ₦650,000, which becomes ₦1,300,000 upon successful completion.',
   },
   {
-    q: 'Can I open more than one savings account?',
-    a: 'Yes. Pay the ₦2,000 registration fee once and open multiple accounts to multiply your payouts.',
+    q: 'What is the weekly payment deadline?',
+    a: 'All weekly contributions must be completed on or before 11:59 p.m. every Saturday. Once the deadline passes and it becomes 12:00 a.m. Sunday, any unpaid contribution is considered a default.',
   },
   {
-    q: 'What happens if I miss a week?',
-    a: 'Missing a week attracts a 100% fine (₦1,300 per missed week). Accounts with 4 or more missed weeks are suspended, and if outstanding savings and fines are not cleared by week 50, you are cashed out only what you saved — forfeiting the double-up match and food rewards.',
+    q: 'What is the Default Penalty for missing a Saturday contribution?',
+    a: 'Any missed weekly contribution attracts a 100% Default Penalty (the missed contribution amount is doubled). For Single Hand: ₦1,300 contribution + ₦1,300 default penalty = ₦2,600 total required to clear default. For 10 Hands: ₦13,000 contribution + ₦13,000 default penalty = ₦26,000 total required to clear default.',
   },
   {
-    q: 'How does the referral program pay?',
-    a: 'You earn ₦1,000 cash for every successful referral, paid every Friday. Hit every accumulative 10 referrals and receive ₦10,000 worth of grocery items, distributed on the last Friday of the month.',
+    q: 'What is the Account Suspension Policy?',
+    a: 'If a member defaults for up to 4 consecutive weeks, the account will automatically be suspended. The account becomes inactive and the member cannot continue normal savings activities until reviewed.',
+  },
+  {
+    q: 'What happens to a Suspended Account at the end of the 50-week cycle?',
+    a: 'A suspended account remains inactive until the end of the cycle. Where a member fails to resolve defaults, at the end of the cycle period only the member’s actual savings contributions will be paid. The Double-Up Reward will not apply, and no additional reward or bonus will be attached.',
+  },
+  {
+    q: 'How does the DigiAjo referral program work?',
+    a: 'You earn ₦1,000 cash for every successful referral, paid directly every Friday. Hit every accumulative 10 referrals and receive ₦10,000 worth of grocery food items, distributed on the last Friday of the month.',
   },
   {
     q: 'How does DigiMart Co-ownership work?',
-    a: 'Buy units at ₦100,000 each. We pool the capital into fast-moving consumer goods and retail distribution, and you earn up to 50% over 12 months. Every unit comes with a legally binding Investment Certificate.',
-  },
-  {
-    q: 'Is DigiMart safe?',
-    a: 'Your investment is backed by physical, real-world commodities — essential food and household provisions with high daily turnover. We handle all operations, so there is zero stress on your end.',
-  },
-  {
-    q: 'Is DigiAjo Global a real, verifiable company?',
-    a: `Yes. Our head office is located at ${BRAND.address} You can reach our WhatsApp customer care on ${BRAND.whatsappNumbers.join(' or ')}.`,
+    a: 'Buy co-ownership units at ₦100,000 each backed by retail distribution & supermarkets. Earn up to 50% ROI over 12 months with a legally binding Investment Certificate.',
   },
 ]
 function FaqItem({ q, a, index }: { q: string; a: string; index: number }) {

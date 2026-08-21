@@ -37,14 +37,20 @@ export function AdminPayments() {
   const [query, setQuery] = useState('')
   const visible = useMemo(
     () =>
-      payments.filter(
-        (payment: any) =>
-          (filter === 'all' || payment.status === filter) &&
-          (typeFilter === 'all' || payment.payment_type === typeFilter) &&
-          `${payment.member} ${payment.reference} ${payment.memberId}`
-            .toLowerCase()
-            .includes(query.toLowerCase()),
-      ),
+      payments.filter((payment: any) => {
+        const matchesStatus = filter === 'all' || payment.status === filter
+        const matchesType =
+          typeFilter === 'all' ||
+          payment.payment_type === typeFilter ||
+          (typeFilter === 'registration_fee' && (payment.payment_type === 'registration' || payment.payment_type === 'registration_fee' || (payment.purpose && payment.purpose.toLowerCase().includes('registration')))) ||
+          (typeFilter === 'weekly_contribution' && (payment.payment_type === 'weekly' || payment.payment_type === 'weekly_contribution' || (payment.purpose && payment.purpose.toLowerCase().includes('weekly')))) ||
+          (typeFilter === 'digimart_unit' && (payment.payment_type === 'digimart' || payment.payment_type === 'digimart_unit' || (payment.purpose && payment.purpose.toLowerCase().includes('digimart'))))
+
+        const searchTarget = `${payment.member || ''} ${payment.reference || ''} ${payment.memberId || ''} ${payment.purpose || ''}`.toLowerCase()
+        const matchesQuery = !query.trim() || searchTarget.includes(query.trim().toLowerCase())
+
+        return matchesStatus && matchesType && matchesQuery
+      }),
     [payments, filter, typeFilter, query],
   )
   const pending = payments.filter(

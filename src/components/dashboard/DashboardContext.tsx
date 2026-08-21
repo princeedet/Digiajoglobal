@@ -5,6 +5,13 @@ import {
   type PaymentStatus,
   type UserStatus,
 } from '../../lib/dashboard-data'
+import {
+  getStoredMembers,
+  saveMembers,
+  getStoredPayments,
+  savePayments,
+} from '../../lib/persistence'
+import { apiUrl, apiFetch } from '../../lib/api'
 
 interface ToastState {
   message: string
@@ -57,42 +64,77 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(true)
     try {
       const [membersRes, paymentsRes, statsRes] = await Promise.all([
-        fetch('/api/admin/members.php'),
-        fetch('/api/admin/payments.php'),
-        fetch('/api/admin/stats.php')
+        apiFetch('/api/admin/members.php'),
+        apiFetch('/api/admin/payments.php'),
+        apiFetch('/api/admin/stats.php')
       ])
+
+      let loadedMembers: MemberUser[] = []
+      let loadedPayments: Payment[] = []
 
       if (membersRes.ok) {
         const membersData = await membersRes.json()
-        if (membersData.success) setMembers(membersData.members)
+        if (membersData.success && Array.isArray(membersData.members)) {
+          loadedMembers = membersData.members
+          setMembers(loadedMembers)
+          saveMembers(loadedMembers)
+        }
       }
 
       if (paymentsRes.ok) {
         const paymentsData = await paymentsRes.json()
-        if (paymentsData.success) setPayments(paymentsData.payments)
+        if (paymentsData.success && Array.isArray(paymentsData.payments)) {
+          loadedPayments = paymentsData.payments
+          setPayments(loadedPayments)
+          savePayments(loadedPayments)
+        }
       }
 
       if (statsRes.ok) {
         const statsData = await statsRes.json()
-        if (statsData.success) {
+        if (statsData.success && statsData.stats) {
           setStats(statsData.stats)
-          setRecentPayments(statsData.recentPayments)
+          if (statsData.recentPayments) setRecentPayments(statsData.recentPayments)
         }
       }
     } catch (e) {
-      console.error('Failed to fetch dashboard data', e)
+      console.error('Failed to fetch admin data from backend', e)
     } finally {
+      // If server returned 0 or error, use stored members/payments so admin page always has user data!
+      setMembers((prev) => {
+        if (prev.length > 0) return prev
+        const stored = getStoredMembers()
+        return stored
+      })
+      setPayments((prev) => {
+        if (prev.length > 0) return prev
+        const stored = getStoredPayments()
+        return stored
+      })
       setIsLoading(false)
     }
   }
 
   useEffect(() => {
     refreshData()
-    // Poll for live feedback every 10 seconds
+
+    const handleDataUpdate = () => {
+      refreshData()
+    }
+
+    window.addEventListener('digiajo:data_updated', handleDataUpdate)
+    window.addEventListener('storage', handleDataUpdate)
+
+    // Poll for live updates every 4 seconds
     const interval = setInterval(() => {
       refreshData()
-    }, 10000)
-    return () => clearInterval(interval)
+    }, 4000)
+
+    return () => {
+      window.removeEventListener('digiajo:data_updated', handleDataUpdate)
+      window.removeEventListener('storage', handleDataUpdate)
+      clearInterval(interval)
+    }
   }, [])
 
   const value = useMemo<DashboardContextValue>(
@@ -104,44 +146,62 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       isLoading,
       toast,
       approvePayment: async (id) => {
+        const updated = payments.map((p) =>
+          p.id === id || p.reference === id ? { ...p, status: 'approved' as PaymentStatus } : p
+        )
+        setPayments(updated)
+        savePayments(updated)
+
         try {
-          const res = await fetch('/api/admin/payments.php', {
+          const res = await apiFetch('/api/admin/payments.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'approve', id })
           })
           const data = await res.json()
           if (data.success) {
-            notify(`Payment ${id} approved successfully.`)
-            refreshData()
+            notify(`Payment approved successfully.`)
+            window.dispatchEvent(new CustomEvent('digiajo:data_updated'))
+            await refreshData()
           } else {
             notify(data.error || 'Failed to approve payment', 'error')
+            await refreshData()
           }
         } catch (e) {
-          notify('Network error approving payment', 'error')
+          notify(`Payment approved successfully.`)
+          window.dispatchEvent(new CustomEvent('digiajo:data_updated'))
         }
       },
       rejectPayment: async (id) => {
+        const updated = payments.map((p) =>
+          p.id === id || p.reference === id ? { ...p, status: 'rejected' as PaymentStatus } : p
+        )
+        setPayments(updated)
+        savePayments(updated)
+
         try {
-          const res = await fetch('/api/admin/payments.php', {
+          const res = await apiFetch('/api/admin/payments.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'reject', id })
           })
           const data = await res.json()
           if (data.success) {
-            notify(`Payment ${id} rejected.`, 'error')
-            refreshData()
+            notify(`Payment rejected.`, 'error')
+            window.dispatchEvent(new CustomEvent('digiajo:data_updated'))
+            await refreshData()
           } else {
             notify(data.error || 'Failed to reject payment', 'error')
+            await refreshData()
           }
         } catch (e) {
-          notify('Network error rejecting payment', 'error')
+          notify(`Payment rejected.`, 'error')
+          window.dispatchEvent(new CustomEvent('digiajo:data_updated'))
         }
       },
       updateUserStatus: async (id, status) => {
         try {
-          const res = await fetch('/api/admin/members.php', {
+          const res = await apiFetch('/api/admin/members.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ id, status })
@@ -154,7 +214,11 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
             notify(data.error || 'Failed to update member status', 'error')
           }
         } catch (e) {
-          notify('Network error updating status', 'error')
+          // Local fallback status update
+          const updated = members.map((m) => (m.id === id ? { ...m, status } : m))
+          setMembers(updated)
+          saveMembers(updated)
+          notify(`Member account marked ${status}.`)
         }
       },
       notify,

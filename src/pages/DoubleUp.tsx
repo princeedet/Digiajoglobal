@@ -230,34 +230,91 @@ export function DoubleUp() {
         </div>
       </Section>
 
-      {/* RULES */}
+      {/* RULES & POLICY */}
       <Section className="bg-brand-dark text-white">
         <SectionHeading
           invert
-          eyebrow="Transparency & trust"
-          title="Keeping your account on track"
-          subtitle="To guarantee your 100% Double-Up profit, remember these simple rules."
+          eyebrow="Savings Structure, Double-Up Reward & Default Policy"
+          title="DigiAjo Double Up Savings Rules"
+          subtitle="Designed to help members build a consistent savings habit while rewarding commitment and discipline."
         />
-        <div className="mt-12 grid gap-6 md:grid-cols-3">
-          {rules.map((r, i) => (
-            <Reveal key={r.title} delay={i * 0.07}>
-              <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-white/5 p-7">
-                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/20 text-accent">
-                  <r.icon className="h-6 w-6" />
-                </div>
-                <h3 className="mt-5 font-display text-lg font-bold">
-                  {r.title}
-                </h3>
-                <p className="mt-2 text-sm leading-relaxed text-white/70">
-                  {r.desc}
-                </p>
+        
+        <div className="mt-12 grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+          <Reveal delay={0.05}>
+            <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-white/5 p-6">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/20 text-accent">
+                <ClockIcon className="h-6 w-6" />
               </div>
-            </Reveal>
-          ))}
+              <h3 className="mt-4 font-display text-lg font-bold text-white">
+                Payment Deadline
+              </h3>
+              <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                11:59 PM Every Saturday
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-white/75">
+                All weekly contributions must be completed on or before 11:59 p.m. every Saturday. Once 12:00 a.m. Sunday arrives, any unpaid contribution is considered a default.
+              </p>
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.1}>
+            <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-white/5 p-6">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-orange-400/20 text-orange-400">
+                <AlertTriangleIcon className="h-6 w-6" />
+              </div>
+              <h3 className="mt-4 font-display text-lg font-bold text-white">
+                100% Default Penalty
+              </h3>
+              <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-orange-400">
+                Contribution Is Doubled
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-white/75">
+                Any missed weekly contribution attracts a 100% penalty. Single Hand (₦1,300 + ₦1,300 = ₦2,600 to clear). 10 Hands (₦13,000 + ₦13,000 = ₦26,000 to clear).
+              </p>
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.15}>
+            <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-white/5 p-6">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-400/20 text-red-400">
+                <BanIcon className="h-6 w-6" />
+              </div>
+              <h3 className="mt-4 font-display text-lg font-bold text-white">
+                Account Suspension
+              </h3>
+              <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-red-400">
+                4 Consecutive Weeks
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-white/75">
+                If a member defaults for up to 4 consecutive weeks, the account is automatically suspended and becomes inactive until reviewed.
+              </p>
+            </div>
+          </Reveal>
+
+          <Reveal delay={0.2}>
+            <div className="flex h-full flex-col rounded-2xl border border-white/10 bg-white/5 p-6">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-accent/20 text-accent">
+                <TrophyIcon className="h-6 w-6" />
+              </div>
+              <h3 className="mt-4 font-display text-lg font-bold text-white">
+                Double-Up Principle
+              </h3>
+              <p className="mt-2 text-xs font-semibold uppercase tracking-wider text-accent">
+                Commitment & Discipline
+              </p>
+              <p className="mt-2 text-sm leading-relaxed text-white/75">
+                At the end of the 50-week cycle, completed accounts receive 100% Double-Up matching. Suspended accounts forfeit bonuses and receive principal refunds only.
+              </p>
+            </div>
+          </Reveal>
         </div>
-        <Reveal className="mt-8">
-          <p className="text-center font-display text-lg font-bold text-accent">
-            Stay consistent — your reward depends on it.
+
+        <Reveal className="mt-10 rounded-2xl border border-accent/20 bg-accent/10 p-6 text-center">
+          <h4 className="font-display text-xl font-bold text-accent">
+            Save Consistently. Complete Your Journey. Enjoy Your Reward.
+          </h4>
+          <p className="mt-1 text-sm text-white/80">
+            DIGIAJO — Redefining Savings. Empowering Lives.
           </p>
         </Reveal>
       </Section>

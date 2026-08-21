@@ -13,6 +13,7 @@ import {
   SmartphoneIcon,
   WalletIcon,
   Loader2Icon,
+  GiftIcon,
 } from 'lucide-react'
 import { Section } from '../components/ui/Section'
 import { Reveal } from '../components/ui/Reveal'
@@ -20,6 +21,7 @@ import { Button } from '../components/ui/Button'
 import { BRAND } from '../lib/brand'
 import { getStoredMembers, saveMembers, getStoredPayments, savePayments } from '../lib/persistence'
 import type { MemberUser, Payment } from '../lib/dashboard-data'
+import { apiUrl, apiFetch } from '../lib/api'
 
 type Plan = 'double-up' | 'digimart'
 const plans: Record<
@@ -70,6 +72,7 @@ export function Register() {
     phone: '',
     email: '',
   })
+  const [referralCode, setReferralCode] = useState(params.get('ref') || '')
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [done, setDone] = useState(false)
   const [paymentMethod, setPaymentMethod] = useState<'bank' | 'paystack' | 'flutterwave'>('bank')
@@ -97,8 +100,9 @@ export function Register() {
     if (!form.name.trim()) next.name = 'Enter your full name.'
     if (!/^[0-9+\s-]{7,}$/.test(form.phone.trim()))
       next.phone = 'Enter a valid phone number.'
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim()))
-      next.email = 'Enter a valid email.'
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      next.email = 'Enter a valid email address.'
+    }
     setErrors(next)
     if (Object.keys(next).length === 0) {
       setDone(true)
@@ -107,6 +111,7 @@ export function Register() {
 
   /** Call the PHP API to save registration to MySQL, also cache in localStorage */
   const callRegisterAPI = async (method: 'bank' | 'paystack' | 'flutterwave') => {
+    const activeRefCode = referralCode.trim() || params.get('ref') || ''
     const payload = {
       name: form.name,
       phone: form.phone,
@@ -114,25 +119,25 @@ export function Register() {
       plan,
       paymentMethod: method,
       bankRef: bankRefInput.trim(),
-      ref: params.get('ref') || '',
+      ref: activeRefCode,
     }
 
     let apiResult: { success: boolean; userId?: string; reference?: string; status?: string; error?: string } | null = null
 
     try {
-      const res = await fetch('/api/register.php', {
+      const res = await apiFetch('/api/register.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
       apiResult = await res.json()
-    } catch {
-      // API unreachable — fall back to localStorage only
-      apiResult = null
+    } catch (e: any) {
+      apiResult = { success: false, error: e?.message || 'Unable to connect to database. Please check your connection.' }
     }
 
     if (apiResult && !apiResult.success) {
-      setApiError(apiResult.error || 'Registration failed. Please try again.')
+      const errMsg = apiResult.error || 'Registration failed. Please try again.'
+      setApiError(errMsg)
       setIsPaying(false)
       return null
     }
@@ -174,6 +179,9 @@ export function Register() {
     const payments = getStoredPayments()
     payments.push(newPayment)
     savePayments(payments)
+
+    // Notify other components/tabs
+    window.dispatchEvent(new CustomEvent('digiajo:data_updated'))
 
     return { userId, ref }
   }
@@ -474,10 +482,11 @@ export function Register() {
                         htmlFor="rname"
                         className="mb-1.5 block text-sm font-semibold text-gray-700"
                       >
-                        Full name
+                        Full name <span className="text-red-500 font-bold">*</span>
                       </label>
                       <input
                         id="rname"
+                        required
                         value={form.name}
                         onChange={(e) => update('name', e.target.value)}
                         className={`${inputBase} ${errors.name ? 'border-red-400' : 'border-gray-200'}`}
@@ -494,10 +503,11 @@ export function Register() {
                         htmlFor="rphone"
                         className="mb-1.5 block text-sm font-semibold text-gray-700"
                       >
-                        Phone / WhatsApp
+                        Phone / WhatsApp <span className="text-red-500 font-bold">*</span>
                       </label>
                       <input
                         id="rphone"
+                        required
                         value={form.phone}
                         onChange={(e) => update('phone', e.target.value)}
                         className={`${inputBase} ${errors.phone ? 'border-red-400' : 'border-gray-200'}`}
@@ -514,21 +524,53 @@ export function Register() {
                         htmlFor="remail"
                         className="mb-1.5 block text-sm font-semibold text-gray-700"
                       >
-                        Email address
+                        Email address <span className="text-red-500 font-bold">*</span>
                       </label>
                       <input
                         id="remail"
                         type="email"
+                        required
                         value={form.email}
                         onChange={(e) => update('email', e.target.value)}
                         className={`${inputBase} ${errors.email ? 'border-red-400' : 'border-gray-200'}`}
                         placeholder="you@email.com"
                       />
                       {errors.email && (
-                        <p className="mt-1 text-xs text-red-500">
-                          {errors.email}
-                        </p>
+                        <div className="mt-1.5 flex items-center justify-between text-xs">
+                          <p className="text-red-500 font-medium">{errors.email}</p>
+                          {errors.email.toLowerCase().includes('already registered') && (
+                            <button
+                              type="button"
+                              onClick={() => navigate('/login')}
+                              className="ml-2 font-bold text-brand hover:underline shrink-0"
+                            >
+                              Log in →
+                            </button>
+                          )}
+                        </div>
                       )}
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label
+                          htmlFor="rref"
+                          className="block text-sm font-semibold text-gray-700"
+                        >
+                          Referral Code <span className="text-xs font-normal text-gray-400">(Optional)</span>
+                        </label>
+                        {referralCode && (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-brand bg-brand-50 px-2 py-0.5 rounded-full">
+                            <GiftIcon className="h-3 w-3" /> Code Applied
+                          </span>
+                        )}
+                      </div>
+                      <input
+                        id="rref"
+                        value={referralCode}
+                        onChange={(e) => setReferralCode(e.target.value.toUpperCase())}
+                        className={`${inputBase} font-mono uppercase tracking-wider`}
+                        placeholder="e.g. 26E36FC8"
+                      />
                     </div>
                     <Button
                       type="submit"

@@ -10,7 +10,8 @@ import {
   ShieldCheckIcon,
 } from 'lucide-react'
 import { Logo } from '../components/ui/Logo'
-import { getStoredMembers, saveMembers, setCurrentUser, getLastSixDigits } from '../lib/persistence'
+import { setCurrentUser, getStoredMembers, saveMembers, getLastSixDigits } from '../lib/persistence'
+import { apiUrl } from '../lib/api'
 
 type Role = 'member' | 'admin'
 const credentials: Record<
@@ -61,7 +62,7 @@ export function Login() {
     setForgotLoading(true)
     setForgotError('')
     try {
-      const res = await fetch('/api/forgot_password.php', {
+      const res = await fetch(apiUrl('/api/forgot_password.php'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: forgotEmail }),
@@ -106,7 +107,7 @@ export function Login() {
 
     // ── Try PHP / MySQL API first ─────────────────────────────────────────
     try {
-      const res = await fetch('/api/login.php', {
+      const res = await fetch(apiUrl('/api/login.php'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: form.email, password: form.password, role }),

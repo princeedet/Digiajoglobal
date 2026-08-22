@@ -101,11 +101,16 @@ export function PaymentHistory() {
 
   // ── Fetch payments ───────────────────────────────────────────────────────────
   const fetchPayments = async () => {
-    if (!memberId) return
+    if (!currentUser) return
     setLoading(true)
     setFetchError('')
     try {
-      const res = await apiFetch(`/api/member/payments.php?member_id=${encodeURIComponent(memberId)}`)
+      const q = new URLSearchParams()
+      if (currentUser.id) q.set('member_id', currentUser.id)
+      if (currentUser.email) q.set('email', currentUser.email)
+      if (currentUser.name) q.set('name', currentUser.name)
+
+      const res = await apiFetch(`/api/member/payments.php?${q.toString()}`)
       if (res.ok) {
         const data = await res.json()
         if (data.success) {
@@ -124,12 +129,12 @@ export function PaymentHistory() {
             setHasEstablishedHands(true)
           }
         } else {
-          const stored = getStoredPayments().filter((p) => p.memberId === memberId)
+          const stored = getStoredPayments().filter((p) => p.memberId === memberId || p.member === currentUser.name)
           setPayments(stored)
         }
       }
     } catch {
-      const stored = getStoredPayments().filter((p) => p.memberId === memberId)
+      const stored = getStoredPayments().filter((p) => p.memberId === memberId || p.member === currentUser.name)
       setPayments(stored)
     } finally {
       setLoading(false)

@@ -35,19 +35,36 @@ try {
     
     // Active members
     $stmt = $db->query("SELECT COUNT(*) as count FROM users WHERE status = 'active'");
-    $activeMembers = (int)$stmt->fetch()['count'];
+    $activeMembers = (int)($stmt->fetch()['count'] ?? 0);
 
-    // Total Savings collected (sum of all total_saved in savings_plans)
-    $stmt = $db->query("SELECT SUM(total_saved) as total FROM savings_plans");
-    $totalSavings = (float)$stmt->fetch()['total'] ?? 0;
+    // Total Savings collected (aggregated across payments, users, and savings_plans)
+    $stmt = $db->query("
+        SELECT GREATEST(
+            COALESCE((SELECT SUM(total_saved) FROM savings_plans), 0),
+            COALESCE((SELECT SUM(saved) FROM users WHERE status = 'active'), 0),
+            COALESCE((
+                SELECT SUM(amount) FROM payments 
+                WHERE status IN ('approved', 'confirmed', 'success') 
+                  AND amount != 2000 
+                  AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
+                  AND (purpose IS NULL OR (
+                      LOWER(purpose) NOT LIKE '%registration%' 
+                      AND LOWER(purpose) NOT LIKE '%reg fee%' 
+                      AND LOWER(purpose) NOT LIKE '%one-time%'
+                      AND LOWER(purpose) NOT LIKE '%fine%'
+                  ))
+            ), 0)
+        ) as total
+    ");
+    $totalSavings = (float)($stmt->fetch()['total'] ?? 0);
 
     // Transfer approvals (pending payments count)
     $stmt = $db->query("SELECT COUNT(*) as count FROM payments WHERE status = 'pending'");
-    $pendingTransfers = (int)$stmt->fetch()['count'];
+    $pendingTransfers = (int)($stmt->fetch()['count'] ?? 0);
 
     // Outgoing payouts (sum of amount where status is pending or processing)
-    $stmt = $db->query("SELECT SUM(amount) as total FROM payouts WHERE status IN ('pending', 'processing')");
-    $outgoingPayouts = (float)$stmt->fetch()['total'] ?? 0;
+    $stmt = $db->query("SELECT COALESCE(SUM(amount), 0) as total FROM payouts WHERE status IN ('pending', 'processing')");
+    $outgoingPayouts = (float)($stmt->fetch()['total'] ?? 0);
     
     // Recent payments (for ledger / dashboard)
     $stmt = $db->query("

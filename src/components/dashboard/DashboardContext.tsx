@@ -60,8 +60,8 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
     window.setTimeout(() => setToast(null), 4200)
   }
 
-  const refreshData = async () => {
-    setIsLoading(true)
+  const refreshData = async (isInitial = false) => {
+    if (isInitial) setIsLoading(true)
     try {
       const [membersRes, paymentsRes, statsRes] = await Promise.all([
         apiFetch('/api/admin/members.php'),
@@ -111,29 +111,23 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         const stored = getStoredPayments()
         return stored
       })
-      setIsLoading(false)
+      if (isInitial) setIsLoading(false)
     }
   }
 
   useEffect(() => {
-    refreshData()
+    refreshData(true)
 
     const handleDataUpdate = () => {
-      refreshData()
+      refreshData(false)
     }
 
     window.addEventListener('digiajo:data_updated', handleDataUpdate)
     window.addEventListener('storage', handleDataUpdate)
 
-    // Poll for live updates every 4 seconds
-    const interval = setInterval(() => {
-      refreshData()
-    }, 4000)
-
     return () => {
       window.removeEventListener('digiajo:data_updated', handleDataUpdate)
       window.removeEventListener('storage', handleDataUpdate)
-      clearInterval(interval)
     }
   }, [])
 

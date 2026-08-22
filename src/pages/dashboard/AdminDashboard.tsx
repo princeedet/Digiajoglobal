@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
   ArrowRightIcon,
@@ -8,6 +8,7 @@ import {
   Clock3Icon,
   CreditCardIcon,
   LandmarkIcon,
+  RotateCwIcon,
   SendIcon,
   UsersIcon,
   WalletCardsIcon,
@@ -125,7 +126,16 @@ export function AdminDashboard() {
   const currentUser = getCurrentUser()
   if (currentUser?.adminRole === 'support') return <StaffDashboard />
 
-  const { payments, stats, recentPayments, approvePayment, rejectPayment, isLoading } = useDashboard()
+  const { payments, stats, recentPayments, approvePayment, rejectPayment, refreshData, isLoading } = useDashboard() as any
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    if (typeof refreshData === 'function') {
+      await refreshData(false)
+    }
+    setTimeout(() => setRefreshing(false), 500)
+  }
   
   if (isLoading) {
     return (
@@ -134,7 +144,7 @@ export function AdminDashboard() {
       </div>
     )
   }
-  const pendingPayments = payments.filter((p) => p.status === 'pending')
+  const pendingPayments = payments.filter((p: any) => p.status === 'pending')
 
   return (
     <>
@@ -142,7 +152,17 @@ export function AdminDashboard() {
         title="Admin overview"
         description="Monitor system-wide savings, weekly payouts, and pending approvals."
         action={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-xs font-bold text-gray-700 shadow-sm transition hover:bg-gray-50 hover:border-brand/30 disabled:opacity-60"
+              title="Refresh overview statistics"
+            >
+              <RotateCwIcon className={`h-3.5 w-3.5 text-brand ${refreshing ? 'animate-spin' : ''}`} />
+              <span>Refresh</span>
+            </button>
             <Link
               to="/admin/payments"
               className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-xs font-bold text-gray-700 shadow-sm transition hover:bg-gray-50"

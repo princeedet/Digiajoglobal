@@ -1,8 +1,20 @@
 <?php
+// ─── DigiAjo Global — Admin Payments Management & Approval Endpoint ─────────
 require_once __DIR__ . '/../config.php';
 $db = getDB();
 
 header('Content-Type: application/json');
+
+if (!function_exists('addColumnIfNotExists')) {
+    function addColumnIfNotExists(PDO $db, string $table, string $column, string $typeDef) {
+        try {
+            $check = $db->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+            if ($check && $check->rowCount() === 0) {
+                $db->exec("ALTER TABLE `$table` ADD `$column` $typeDef");
+            }
+        } catch (Exception $e) {}
+    }
+}
 
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -10,19 +22,35 @@ try {
     $db->exec("
         CREATE TABLE IF NOT EXISTS payments (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            user_id INT NOT NULL,
-            payment_ref VARCHAR(100),
+            user_id INT NULL,
+            payment_ref VARCHAR(100) NULL,
             amount DECIMAL(12,2) NOT NULL,
-            channel VARCHAR(50),
+            channel VARCHAR(50) DEFAULT 'bank_transfer',
             status VARCHAR(50) DEFAULT 'pending',
-            purpose VARCHAR(255),
-            member_name VARCHAR(100),
-            member_id VARCHAR(50),
-            paid_at TIMESTAMP NULL,
+            payment_status VARCHAR(50) DEFAULT 'pending',
+            purpose VARCHAR(255) NULL,
+            payment_type VARCHAR(100) DEFAULT 'registration_fee',
+            member_name VARCHAR(100) NULL,
+            member_id VARCHAR(50) NULL,
+            hands INT DEFAULT 1,
+            weeks_covered INT DEFAULT 1,
+            payment_scope VARCHAR(100) DEFAULT 'registration',
+            paid_at DATETIME NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ");
-    
+
+    addColumnIfNotExists($db, 'payments', 'payment_status', "VARCHAR(50) DEFAULT 'pending'");
+    addColumnIfNotExists($db, 'payments', 'payment_type', "VARCHAR(100) DEFAULT 'registration_fee'");
+    addColumnIfNotExists($db, 'payments', 'purpose', "VARCHAR(255)");
+    addColumnIfNotExists($db, 'payments', 'hands', "INT DEFAULT 1");
+    addColumnIfNotExists($db, 'payments', 'weeks_covered', "INT DEFAULT 1");
+    addColumnIfNotExists($db, 'payments', 'payment_scope', "VARCHAR(100) DEFAULT 'registration'");
+    addColumnIfNotExists($db, 'payments', 'member_name', "VARCHAR(255)");
+    addColumnIfNotExists($db, 'payments', 'member_id', "VARCHAR(50)");
+    addColumnIfNotExists($db, 'payments', 'paid_at', "DATETIME NULL");
+
+    // ─── GET: Fetch all payments ──────────────────────────────────────────────
     if ($method === 'GET') {
         $stmt = $db->query("
             SELECT 
@@ -38,16 +66,14 @@ try {
                 COALESCE(p.purpose, 'Registration Fee') as purpose,
                 COALESCE(p.payment_type, 'registration_fee') as payment_type
             FROM payments p
-            LEFT JOIN users u ON u.id = p.user_id
+            LEFT JOIN users u ON (u.id = p.user_id OR u.member_id = p.member_id)
             ORDER BY p.created_at DESC
         ");
         $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Map channels and build a human-readable purpose label
         foreach ($payments as &$p) {
             $p['amount'] = (float)$p['amount'];
 
-            // Format channel
             if ($p['channel'] === 'bank_transfer') {
                 $p['channel'] = 'Bank transfer';
             } else if ($p['channel'] === 'card') {
@@ -56,7 +82,6 @@ try {
                 $p['channel'] = 'USSD';
             }
 
-            // Ensure purpose always has a readable label
             if (empty($p['purpose'])) {
                 $typeLabels = [
                     'registration_fee'    => 'Registration Fee',
@@ -67,6 +92,7 @@ try {
                 $p['purpose'] = $typeLabels[$p['payment_type']] ?? ucwords(str_replace('_', ' ', $p['payment_type']));
             }
         }
+        unset($p);
 
         echo json_encode([
             'success' => true,
@@ -75,6 +101,7 @@ try {
         exit;
     }
 
+    // ─── POST: Approve or Reject Payment ──────────────────────────────────────
     if ($method === 'POST') {
         $data = json_decode(file_get_contents('php://input'), true);
         $action = $data['action'] ?? '';
@@ -86,9 +113,9 @@ try {
             exit;
         }
 
-        $status = $action === 'approve' ? 'approved' : 'rejected';
+        $status = ($action === 'approve') ? 'approved' : 'rejected';
 
-        // Ensure tables and columns exist
+        // Provision savings_plans table
         try {
             $db->exec("
                 CREATE TABLE IF NOT EXISTS savings_plans (
@@ -108,11 +135,16 @@ try {
             ");
         } catch (Exception $e) {}
 
-        // Match payment by payment_ref or numeric id or formatted PAY-id
+        // Match payment
         $numericId = is_numeric($id) ? (int)$id : 0;
+        if (str_starts_with($id, 'PAY-') && is_numeric(substr($id, 4))) {
+            $numericId = (int)substr($id, 4);
+        }
+
         $stmt = $db->prepare("
             SELECT * FROM payments 
             WHERE payment_ref = ? OR CONCAT('PAY-', id) = ? OR id = ?
+            ORDER BY id DESC
             LIMIT 1
         ");
         $stmt->execute([$id, $id, $numericId]);
@@ -125,57 +157,117 @@ try {
         }
 
         $dbPaymentId = (int)$payment['id'];
-        $userId      = (int)$payment['user_id'];
-        $memberId    = $payment['member_id'];
+        $userId      = (int)($payment['user_id'] ?? 0);
+        $memberId    = $payment['member_id'] ?? '';
         $amount      = (float)$payment['amount'];
         $paymentType = $payment['payment_type'] ?? 'registration_fee';
+        $memberName  = $payment['member_name'] ?? '';
+
+        // Resolve user accurately
+        $targetUser = null;
+        if ($userId > 0) {
+            $uStmt = $db->prepare('SELECT id, member_id, name, email FROM users WHERE id = ? LIMIT 1');
+            $uStmt->execute([$userId]);
+            $targetUser = $uStmt->fetch(PDO::FETCH_ASSOC);
+        }
+        if (!$targetUser && !empty($memberId)) {
+            $uStmt = $db->prepare('SELECT id, member_id, name, email FROM users WHERE member_id = ? OR referral_code = ? LIMIT 1');
+            $uStmt->execute([$memberId, $memberId]);
+            $targetUser = $uStmt->fetch(PDO::FETCH_ASSOC);
+        }
+        if (!$targetUser && !empty($memberName)) {
+            $uStmt = $db->prepare('SELECT id, member_id, name, email FROM users WHERE name = ? OR email = ? LIMIT 1');
+            $uStmt->execute([$memberName, $memberName]);
+            $targetUser = $uStmt->fetch(PDO::FETCH_ASSOC);
+        }
+
+        if ($targetUser) {
+            $userId = (int)$targetUser['id'];
+            $memberId = $targetUser['member_id'] ?: ('DA-' . $userId);
+        }
 
         $db->beginTransaction();
 
         try {
-            // 1. Update payment status
+            // 1. Update target payment status
             $db->prepare("
                 UPDATE payments 
-                SET status = ?, payment_status = ?, paid_at = NOW() 
+                SET status = ?, paid_at = NOW(), user_id = ?, member_id = ?
                 WHERE id = ?
-            ")->execute([$status, $status, $dbPaymentId]);
+            ")->execute([$status, $userId ?: null, $memberId ?: null, $dbPaymentId]);
+
+            // Safely sync payment_status column if exists
+            try {
+                $db->prepare("UPDATE payments SET payment_status = ? WHERE id = ?")->execute([$status, $dbPaymentId]);
+            } catch (Exception $e) {}
 
             if ($status === 'approved') {
-                // 2. Activate user and mark registration fee paid
-                $db->prepare("
-                    UPDATE users 
-                    SET status = 'active', registration_fee_paid = 1 
-                    WHERE id = ? OR member_id = ?
-                ")->execute([$userId, $memberId]);
-
-                // 3. Activate referral record
-                try {
+                // 2. Activate user account in users table
+                if ($userId > 0) {
                     $db->prepare("
-                        UPDATE referrals 
-                        SET status = 'active', updated_at = NOW() 
-                        WHERE (referee_id = ? OR referee_id = (SELECT id FROM users WHERE member_id = ? LIMIT 1))
-                    ")->execute([$userId, $memberId]);
-                } catch (Exception $e) {}
+                        UPDATE users 
+                        SET status = 'active', registration_fee_paid = 1 
+                        WHERE id = ?
+                    ")->execute([$userId]);
+                }
+                if (!empty($memberId)) {
+                    $db->prepare("
+                        UPDATE users 
+                        SET status = 'active', registration_fee_paid = 1 
+                        WHERE member_id = ?
+                    ")->execute([$memberId]);
+                }
+                if (!empty($memberName)) {
+                    $db->prepare("
+                        UPDATE users 
+                        SET status = 'active', registration_fee_paid = 1 
+                        WHERE name = ?
+                    ")->execute([$memberName]);
+                }
 
-                // 4. Ensure savings plan exists for the member
-                try {
-                    $spCheck = $db->prepare("SELECT id FROM savings_plans WHERE user_id = ? LIMIT 1");
-                    $spCheck->execute([$userId]);
-                    $existingSp = $spCheck->fetch();
-
-                    if (!$existingSp) {
-                        $planIdStr = 'SP-' . substr(md5((string)$userId), 0, 6);
+                // 3. Auto-clear any duplicate pending registration payments for this member
+                if ($amount == 2000 || $paymentType === 'registration_fee' || str_contains(strtolower($payment['purpose'] ?? ''), 'registration')) {
+                    if ($userId > 0) {
                         $db->prepare("
-                            INSERT INTO savings_plans 
-                                (user_id, plan_type, savings_plan_id, total_saved, weeks_completed, status)
-                            VALUES 
-                                (?, 'Double Up', ?, 0.00, 0, 'active')
-                        ")->execute([$userId, $planIdStr]);
+                            UPDATE payments 
+                            SET status = 'approved', paid_at = NOW() 
+                            WHERE user_id = ? AND status = 'pending' AND amount = 2000
+                        ")->execute([$userId]);
                     }
-                } catch (Exception $e) {}
+                }
 
-                // 5. If weekly contribution, update savings balance
-                if ($paymentType === 'weekly_contribution' || str_contains(strtolower($payment['purpose'] ?? ''), 'contribution')) {
+                // 4. Activate referral record
+                if ($userId > 0) {
+                    try {
+                        $db->prepare("
+                            UPDATE referrals 
+                            SET status = 'active', updated_at = NOW() 
+                            WHERE referee_id = ?
+                        ")->execute([$userId]);
+                    } catch (Exception $e) {}
+                }
+
+                // 5. Ensure savings plan exists for the member
+                if ($userId > 0) {
+                    try {
+                        $spCheck = $db->prepare("SELECT id FROM savings_plans WHERE user_id = ? LIMIT 1");
+                        $spCheck->execute([$userId]);
+                        $existingSp = $spCheck->fetch();
+
+                        if (!$existingSp) {
+                            $planIdStr = 'SP-' . substr(md5((string)$userId), 0, 6);
+                            $db->prepare("
+                                INSERT INTO savings_plans 
+                                    (user_id, plan_type, savings_plan_id, total_saved, weeks_completed, status)
+                                VALUES 
+                                    (?, 'double_up', ?, 0.00, 0, 'active')
+                            ")->execute([$userId, $planIdStr]);
+                        }
+                    } catch (Exception $e) {}
+                }
+
+                // 6. If weekly contribution, update savings balance
+                if ($userId > 0 && ($paymentType === 'weekly_contribution' || str_contains(strtolower($payment['purpose'] ?? ''), 'contribution') || str_contains(strtolower($payment['purpose'] ?? ''), 'savings'))) {
                     try {
                         $weeksAdded = max(1, (int)($payment['weeks_covered'] ?? 1));
                         $db->prepare("
@@ -183,20 +275,28 @@ try {
                             SET total_saved = total_saved + ?, weeks_completed = weeks_completed + ?
                             WHERE user_id = ?
                         ")->execute([$amount, $weeksAdded, $userId]);
+
+                        $db->prepare("
+                            UPDATE users 
+                            SET saved = COALESCE(saved, 0) + ?, weeks = COALESCE(weeks, 0) + ?
+                            WHERE id = ?
+                        ")->execute([$amount, $weeksAdded, $userId]);
                     } catch (Exception $e) {}
                 }
 
-                // 6. Send approval notification
-                try {
-                    $db->prepare("
-                        INSERT INTO notifications (user_id, member_id, title, message, type)
-                        VALUES (?, ?, 'Payment Approved', ?, 'success')
-                    ")->execute([
-                        $userId,
-                        $memberId,
-                        "Your payment of ₦" . number_format($amount, 2) . " (Ref: {$payment['payment_ref']}) has been confirmed and approved!"
-                    ]);
-                } catch (Exception $e) {}
+                // 7. Send approval notification
+                if ($userId > 0) {
+                    try {
+                        $db->prepare("
+                            INSERT INTO notifications (user_id, member_id, title, message, type)
+                            VALUES (?, ?, 'Payment Approved', ?, 'success')
+                        ")->execute([
+                            $userId,
+                            $memberId,
+                            "Your payment of ₦" . number_format($amount, 2) . " (Ref: {$payment['payment_ref']}) has been confirmed and approved!"
+                        ]);
+                    } catch (Exception $e) {}
+                }
             }
 
             $db->commit();
@@ -225,3 +325,4 @@ try {
     http_response_code(500);
     echo json_encode(['success' => false, 'error' => 'Database error: ' . $e->getMessage()]);
 }
+

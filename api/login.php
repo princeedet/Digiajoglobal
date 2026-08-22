@@ -152,14 +152,35 @@ if (!$passwordOk) {
     exit;
 }
 
-// ─── Status Checks ───────────────────────────────────────────────────────────
+// ─── Status Checks & Auto-Healing ───────────────────────────────────────────
 if ($user['status'] === 'pending_verification') {
-    http_response_code(403);
-    echo json_encode([
-        'success' => false,
-        'error'   => 'Your account is pending confirmation of your registration payment. Please check back shortly once admin reviews your transfer.',
-    ]);
-    exit;
+    // Check if user has an approved payment in payments table
+    try {
+        $payCheck = $db->prepare("
+            SELECT id FROM payments 
+            WHERE (user_id = ? OR member_id = ? OR member_name = ? OR user_id = (SELECT id FROM users WHERE email = ? LIMIT 1)) 
+              AND status IN ('approved', 'confirmed', 'success')
+            LIMIT 1
+        ");
+        $payCheck->execute([$user['id'], $user['member_id'], $user['name'], $email]);
+        $hasApproved = $payCheck->fetch();
+
+        if ($hasApproved) {
+            // Auto-heal status to active
+            $db->prepare("UPDATE users SET status = 'active', registration_fee_paid = 1 WHERE id = ?")->execute([$user['id']]);
+            $user['status'] = 'active';
+            $user['registration_fee_paid'] = 1;
+        }
+    } catch (Exception $e) {}
+
+    if ($user['status'] === 'pending_verification') {
+        http_response_code(403);
+        echo json_encode([
+            'success' => false,
+            'error'   => 'Your account is pending confirmation of your registration payment. Please check back shortly once admin reviews your transfer.',
+        ]);
+        exit;
+    }
 }
 
 if ($user['status'] === 'suspended') {

@@ -323,26 +323,49 @@ try {
         } catch (PDOException $e) {}
     }
 
-    // ─── Insert Payment ────────────────────────────────────────────────────────
-    $payInsert = $db->prepare("
-        INSERT INTO payments
-            (payment_ref, user_id, member_id, member_name, amount, channel,
-             payment_type, status, payment_status, purpose, hands, weeks_covered, payment_scope)
-        VALUES
-            (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 'registration')
-    ");
-    $payInsert->execute([
-        $txRef,
-        $dbUserId,
-        $memberId,
-        $name,
-        $planInfo['fee'],
-        $channel,
-        $planInfo['paymentType'],
-        $paymentStatus,
-        $paymentStatus,
-        $planInfo['purpose'],
-    ]);
+    // ─── Insert or Update Payment (Prevent Duplicates) ───────────────────────
+    $existingPayStmt = $db->prepare("SELECT id FROM payments WHERE (user_id = ? OR payment_ref = ?) AND status = 'pending' LIMIT 1");
+    $existingPayStmt->execute([$dbUserId, $txRef]);
+    $existingPayRow = $existingPayStmt->fetch();
+
+    if ($existingPayRow) {
+        $db->prepare("
+            UPDATE payments 
+            SET payment_ref = ?, member_id = ?, member_name = ?, amount = ?, channel = ?, payment_type = ?, purpose = ?, status = ?, payment_status = ?
+            WHERE id = ?
+        ")->execute([
+            $txRef,
+            $memberId,
+            $name,
+            $planInfo['fee'],
+            $channel,
+            $planInfo['paymentType'],
+            $planInfo['purpose'],
+            $paymentStatus,
+            $paymentStatus,
+            $existingPayRow['id']
+        ]);
+    } else {
+        $payInsert = $db->prepare("
+            INSERT INTO payments
+                (payment_ref, user_id, member_id, member_name, amount, channel,
+                 payment_type, status, payment_status, purpose, hands, weeks_covered, payment_scope)
+            VALUES
+                (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 'registration')
+        ");
+        $payInsert->execute([
+            $txRef,
+            $dbUserId,
+            $memberId,
+            $name,
+            $planInfo['fee'],
+            $channel,
+            $planInfo['paymentType'],
+            $paymentStatus,
+            $paymentStatus,
+            $planInfo['purpose'],
+        ]);
+    }
 
     // ─── Auto-create savings plan for approved online payments ────────────────
     if ($paymentStatus === 'approved' && $plan === 'double-up') {

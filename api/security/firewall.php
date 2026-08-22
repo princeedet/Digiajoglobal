@@ -148,13 +148,17 @@ class DigiAjoFirewall {
         return null;
     }
 
-    /** Anti-Brute-Force & Flood Rate Limiter (e.g. max 120 requests/minute per IP) */
+    /** Anti-Brute-Force & Flood Rate Limiter (max 1200 requests/minute per IP) */
     private static function checkRateLimit(string $ip): bool {
+        if ($ip === '127.0.0.1' || $ip === '::1' || $ip === 'localhost') {
+            return true;
+        }
+
         $tempDir = sys_get_temp_dir();
         $rateFile = $tempDir . '/digiajo_rl_' . md5($ip) . '.json';
         $now = time();
         $window = 60; // 1 minute
-        $maxRequests = 120; // 120 requests per minute
+        $maxRequests = 1200; // Generous ceiling to prevent false positives during dashboard usage
 
         $record = ['count' => 1, 'start' => $now];
         if (file_exists($rateFile)) {
@@ -199,16 +203,13 @@ class DigiAjoFirewall {
 
         // 2. Check Rate Limiter
         if (!self::checkRateLimit($clientIp)) {
-            self::blockThreat(
-                'Rate Limit / Request Flooding Violation',
-                'Exceeded 120 requests/minute threshold',
-                $clientIp,
-                $userAgent,
-                $requestUri,
-                $requestMethod,
-                429,
-                'Too Many Requests. Please slow down.'
-            );
+            http_response_code(429);
+            echo json_encode([
+                'success' => false,
+                'error'   => 'Too Many Requests. Please slow down.',
+                'ref_id'  => 'SEC-RATE-LIMIT'
+            ]);
+            exit;
         }
 
         // 3. Scan URL Query String

@@ -1,6 +1,7 @@
 <?php
 // ─── DigiAjo Global — Database Schema Sync & Migration ───────────────────────
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../utils/email.php';
 $db = getDB();
 
 header('Content-Type: application/json');
@@ -198,24 +199,98 @@ try {
     if ($method === 'POST') {
         $data   = json_decode(file_get_contents('php://input'), true);
         $action = $data['action'] ?? 'status';
-        $id     = $data['id'] ?? '';
-        $status = $data['status'] ?? '';
+        $id     = trim($data['id'] ?? '');
+        $status = trim($data['status'] ?? '');
 
         if (!$id || !$status) {
             http_response_code(400);
             echo json_encode(['success' => false, 'error' => 'Missing ID or status']);
             exit;
         }
-        $stmt = $db->prepare("UPDATE users SET status = ? WHERE member_id = ?");
-        $stmt->execute([$status, $id]);
-        echo json_encode(['success' => true, 'message' => 'Status updated successfully']);
+
+        $cleanId = is_numeric($id) ? (int)$id : (int)preg_replace('/\D/', '', $id);
+
+        // Fetch user
+        $uStmt = $db->prepare("SELECT id, member_id, name, email, phone FROM users WHERE member_id = ? OR id = ? OR member_id = CONCAT('DA-', ?) LIMIT 1");
+        $uStmt->execute([$id, $cleanId, $cleanId]);
+        $user = $uStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'error' => 'User not found']);
+            exit;
+        }
+
+        $userId = (int)$user['id'];
+        $memberId = $user['member_id'] ?: ('DA-' . $userId);
+
+        $db->prepare("UPDATE users SET status = ?, registration_fee_paid = ? WHERE id = ?")->execute([
+            $status,
+            $status === 'active' ? 1 : 0,
+            $userId
+        ]);
+
+        if ($status === 'active') {
+            // Auto-approve pending registration payments
+            try {
+                $db->prepare("
+                    UPDATE payments 
+                    SET status = 'approved', paid_at = NOW() 
+                    WHERE (user_id = ? OR member_id = ? OR member_id = ?) AND status = 'pending' AND amount = 2000
+                ")->execute([$userId, $memberId, $id]);
+            } catch (Exception $e) {}
+
+            // Auto-activate referral
+            try {
+                $db->prepare("UPDATE referrals SET status = 'active', updated_at = NOW() WHERE referee_id = ?")->execute([$userId]);
+            } catch (Exception $e) {}
+
+            // Ensure savings plan exists
+            try {
+                $spCheck = $db->prepare("SELECT id FROM savings_plans WHERE user_id = ? LIMIT 1");
+                $spCheck->execute([$userId]);
+                if (!$spCheck->fetch()) {
+                    $planIdStr = 'SP-' . substr(md5((string)$userId), 0, 6);
+                    $db->prepare("INSERT INTO savings_plans (user_id, plan_type, savings_plan_id, total_saved, weeks_completed, status) VALUES (?, 'double_up', ?, 0.00, 0, 'active')")->execute([$userId, $planIdStr]);
+                }
+            } catch (Exception $e) {}
+
+            // Send notification
+            try {
+                $db->prepare("
+                    INSERT INTO notifications (user_id, member_id, title, message, type)
+                    VALUES (?, ?, 'Account Approved & Active', 'Your DigiAjo Global account has been approved. You can now log in and manage your savings.', 'success')
+                ")->execute([$userId, $memberId]);
+            } catch (Exception $e) {}
+
+            // Send confirmation email
+            try {
+                $cleanPhone = preg_replace('/\D/', '', $user['phone']);
+                $defaultPass = substr($cleanPhone, -6);
+                $subject = "Account Approved — Welcome to DigiAjo Global ({$memberId})";
+                $message = "
+                    <p>Dear <strong>{$user['name']}</strong>,</p>
+                    <p>Great news! Your account on <strong>DigiAjo Global</strong> has been approved and is now <strong>Active</strong>.</p>
+                    <table style='width:100%; border-collapse:collapse; margin:20px 0;'>
+                        <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Member ID:</td><td style='padding:8px 0; font-weight:bold;'>{$memberId}</td></tr>
+                        <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Email:</td><td style='padding:8px 0; font-weight:bold;'>{$user['email']}</td></tr>
+                        <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Status:</td><td style='padding:8px 0; font-weight:bold; color:#164f29;'>Active</td></tr>
+                    </table>
+                    <p>You can now sign in to your dashboard to view your savings plan, make weekly contributions, and track your progress.</p>
+                    <p><a href='https://digiajoglobal.com/#/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
+                ";
+                send_email($user['email'], $subject, $message);
+            } catch (Exception $e) {}
+        }
+
+        echo json_encode(['success' => true, 'message' => "User status updated to {$status} successfully"]);
         exit;
     }
 
     // ── PUT: edit user details ────────────────────────────────────────────────
     if ($method === 'PUT') {
         $data = json_decode(file_get_contents('php://input'), true);
-        $id   = $data['id'] ?? '';          // member_id like DA-XXXXX
+        $id   = trim($data['id'] ?? '');
 
         if (!$id) {
             http_response_code(400);
@@ -223,13 +298,26 @@ try {
             exit;
         }
 
+        $cleanId = is_numeric($id) ? (int)$id : (int)preg_replace('/\D/', '', $id);
+        $uStmt = $db->prepare("SELECT id, member_id, name, email, phone FROM users WHERE member_id = ? OR id = ? OR member_id = CONCAT('DA-', ?) LIMIT 1");
+        $uStmt->execute([$id, $cleanId, $cleanId]);
+        $user = $uStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$user) {
+            http_response_code(404);
+            echo json_encode(['success' => false, 'error' => 'User not found']);
+            exit;
+        }
+
+        $userId = (int)$user['id'];
+        $memberId = $user['member_id'] ?: ('DA-' . $userId);
+
         $fields = [];
         $params = [];
 
         if (!empty($data['name'])) {
             $fields[] = 'name = ?';
             $params[] = trim($data['name']);
-            // Also update initials
             $parts    = preg_split('/\s+/', trim($data['name']));
             $initials = strtoupper(implode('', array_map(fn($p) => $p[0] ?? '', array_slice($parts, 0, 2))));
             $fields[] = 'initials = ?';
@@ -246,6 +334,9 @@ try {
         if (!empty($data['status'])) {
             $fields[] = 'status = ?';
             $params[] = $data['status'];
+            if ($data['status'] === 'active') {
+                $fields[] = 'registration_fee_paid = 1';
+            }
         }
 
         if (empty($fields)) {
@@ -254,9 +345,18 @@ try {
             exit;
         }
 
-        $params[] = $id;
-        $sql = "UPDATE users SET " . implode(', ', $fields) . " WHERE member_id = ?";
+        $params[] = $userId;
+        $sql = "UPDATE users SET " . implode(', ', $fields) . " WHERE id = ?";
         $db->prepare($sql)->execute($params);
+
+        if (($data['status'] ?? '') === 'active') {
+            try {
+                $db->prepare("UPDATE payments SET status = 'approved', paid_at = NOW() WHERE user_id = ? AND status = 'pending' AND amount = 2000")->execute([$userId]);
+            } catch (Exception $e) {}
+            try {
+                $db->prepare("UPDATE referrals SET status = 'active', updated_at = NOW() WHERE referee_id = ?")->execute([$userId]);
+            } catch (Exception $e) {}
+        }
 
         echo json_encode(['success' => true, 'message' => 'User updated successfully']);
         exit;

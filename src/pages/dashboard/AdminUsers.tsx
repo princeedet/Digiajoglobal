@@ -880,7 +880,7 @@ function getMemberMissedStatus(member: MemberUser) {
 
 // ── Main AdminUsers Component ──────────────────────────────────────────────────
 export function AdminUsers() {
-  const { members, updateUserStatus, refreshData } = useDashboard() as any
+  const { members, updateUserStatus, refreshData, notify } = useDashboard() as any
   const [query, setQuery]   = useState('')
   const [status, setStatus] = useState<'all' | 'missed' | UserStatus>('all')
   const [selected, setSelected] = useState<MemberUser | null>(null)
@@ -896,6 +896,19 @@ export function AdminUsers() {
   const [resetLoading,     setResetLoading]     = useState(false)
   const [resetError,       setResetError]       = useState('')
   const [resetSuccess,     setResetSuccess]     = useState('')
+
+  const handleQuickApprove = async (m: MemberUser) => {
+    try {
+      await updateUserStatus(m.id, 'active')
+      if (typeof notify === 'function') {
+        notify(`Account for ${m.name} (${m.id}) approved and activated!`)
+      }
+      window.dispatchEvent(new CustomEvent('digiajo:data_updated'))
+      if (typeof refreshData === 'function') refreshData()
+    } catch (e) {
+      if (typeof notify === 'function') notify('Failed to approve member', 'error')
+    }
+  }
 
   // Total members with missed payments
   const totalMissedMembersCount = useMemo(
@@ -1237,7 +1250,19 @@ export function AdminUsers() {
                       </span>
                     </td>
                     <td className="px-5 py-4">
-                      <StatusBadge status={member.status} />
+                      <div className="flex items-center gap-2">
+                        <StatusBadge status={member.status} />
+                        {member.status === 'pending_verification' && (
+                          <button
+                            type="button"
+                            onClick={() => handleQuickApprove(member)}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-emerald-700 transition shrink-0"
+                            title="Approve and activate this member account"
+                          >
+                            <CheckCircle2Icon className="h-3 w-3" /> Approve
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">
@@ -1331,6 +1356,16 @@ export function AdminUsers() {
                   <p className="text-xs text-gray-500">{member.id} • {NAIRA(member.saved)}</p>
                 </div>
                 <div className="flex gap-1.5 shrink-0 items-center">
+                  {member.status === 'pending_verification' && (
+                    <button
+                      type="button"
+                      onClick={() => handleQuickApprove(member)}
+                      className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white shadow-sm hover:bg-emerald-700 transition"
+                      title="Approve member"
+                    >
+                      Approve
+                    </button>
+                  )}
                   <button
                     onClick={() => setFineUser(member)}
                     className={`relative rounded-lg border p-1.5 transition ${

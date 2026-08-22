@@ -5,6 +5,7 @@
 // Returns:     { success, userId, paymentId, reference, message }
 
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/utils/email.php';
 
 header('Content-Type: application/json');
 
@@ -227,6 +228,43 @@ try {
             ]);
         }
 
+        // Send registration emails
+        try {
+            $subjectUser = "Welcome to DigiAjo Global — Registration Received ({$memberId})";
+            $msgUser = "
+                <p>Dear <strong>{$name}</strong>,</p>
+                <p>Thank you for registering on <strong>DigiAjo Global</strong> for the <strong>{$planInfo['label']}</strong>.</p>
+                <table style='width:100%; border-collapse:collapse; margin:20px 0;'>
+                    <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Member ID:</td><td style='padding:8px 0; font-weight:bold;'>{$memberId}</td></tr>
+                    <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Payment Reference:</td><td style='padding:8px 0; font-weight:bold; color:#164f29;'>{$txRef}</td></tr>
+                    <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Registration Fee:</td><td style='padding:8px 0; font-weight:bold;'>₦" . number_format($planInfo['fee'], 2) . "</td></tr>
+                    <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Status:</td><td style='padding:8px 0; font-weight:bold;'>" . ($paymentStatus === 'approved' ? 'Active' : 'Pending Admin Verification') . "</td></tr>
+                </table>
+                <p>" . ($paymentStatus === 'approved' 
+                    ? "Your payment is confirmed and your account is active! You can sign in immediately using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number)." 
+                    : "Our administrators will review and confirm your bank transfer. Once confirmed, you can log in to your dashboard using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number: <strong>{$defaultPass}</strong>).") . "</p>
+                <p><a href='https://digiajoglobal.com/#/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
+            ";
+            send_email($email, $subjectUser, $msgUser);
+
+            $subjectAdmin = "Registration Transfer Submitted — {$name} ({$memberId})";
+            $msgAdmin = "
+                <p>A member registration transfer has been submitted on DigiAjo Global:</p>
+                <ul>
+                    <li><strong>Name:</strong> {$name}</li>
+                    <li><strong>Member ID:</strong> {$memberId}</li>
+                    <li><strong>Email:</strong> {$email}</li>
+                    <li><strong>Phone:</strong> {$phone}</li>
+                    <li><strong>Plan:</strong> {$planInfo['label']}</li>
+                    <li><strong>Payment Ref:</strong> {$txRef}</li>
+                    <li><strong>Amount:</strong> ₦" . number_format($planInfo['fee'], 2) . "</li>
+                    <li><strong>Channel:</strong> {$channel}</li>
+                </ul>
+                <p>Please review and approve in the <a href='https://digiajoglobal.com/#/admin/payments'>Admin Portal</a>.</p>
+            ";
+            send_email('admin@digiajoglobal.com', $subjectAdmin, $msgAdmin);
+        } catch (Exception $e) {}
+
         echo json_encode([
             'success'       => true,
             'userId'        => $memberId,
@@ -377,6 +415,43 @@ try {
             ")->execute([$dbUserId]);
         } catch (PDOException $e) {}
     }
+
+    // ─── Send Registration Emails ────────────────────────────────────────────
+    try {
+        $subjectUser = "Welcome to DigiAjo Global — Registration Received ({$memberId})";
+        $msgUser = "
+            <p>Dear <strong>{$name}</strong>,</p>
+            <p>Thank you for registering on <strong>DigiAjo Global</strong> for the <strong>{$planInfo['label']}</strong>.</p>
+            <table style='width:100%; border-collapse:collapse; margin:20px 0;'>
+                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Member ID:</td><td style='padding:8px 0; font-weight:bold;'>{$memberId}</td></tr>
+                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Payment Reference:</td><td style='padding:8px 0; font-weight:bold; color:#164f29;'>{$txRef}</td></tr>
+                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Registration Fee:</td><td style='padding:8px 0; font-weight:bold;'>₦" . number_format($planInfo['fee'], 2) . "</td></tr>
+                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Status:</td><td style='padding:8px 0; font-weight:bold;'>" . ($paymentStatus === 'approved' ? 'Active' : 'Pending Admin Verification') . "</td></tr>
+            </table>
+            <p>" . ($paymentStatus === 'approved' 
+                ? "Your payment is confirmed and your account is active! You can sign in immediately using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number)." 
+                : "Our administrators will review and confirm your bank transfer. Once confirmed, you can log in to your dashboard using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number: <strong>{$defaultPass}</strong>).") . "</p>
+            <p><a href='https://digiajoglobal.com/#/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
+        ";
+        send_email($email, $subjectUser, $msgUser);
+
+        $subjectAdmin = "New Registration — {$name} ({$memberId})";
+        $msgAdmin = "
+            <p>A new member registration has been submitted on DigiAjo Global:</p>
+            <ul>
+                <li><strong>Name:</strong> {$name}</li>
+                <li><strong>Member ID:</strong> {$memberId}</li>
+                <li><strong>Email:</strong> {$email}</li>
+                <li><strong>Phone:</strong> {$phone}</li>
+                <li><strong>Plan:</strong> {$planInfo['label']}</li>
+                <li><strong>Payment Ref:</strong> {$txRef}</li>
+                <li><strong>Amount:</strong> ₦" . number_format($planInfo['fee'], 2) . "</li>
+                <li><strong>Channel:</strong> {$channel}</li>
+            </ul>
+            <p>Please review and approve in the <a href='https://digiajoglobal.com/#/admin/payments'>Admin Portal</a>.</p>
+        ";
+        send_email('admin@digiajoglobal.com', $subjectAdmin, $msgAdmin);
+    } catch (Exception $e) {}
 
     // ─── Response ─────────────────────────────────────────────────────────────
     echo json_encode([

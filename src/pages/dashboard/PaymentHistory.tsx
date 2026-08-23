@@ -52,6 +52,13 @@ export function PaymentHistory() {
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState('')
   const [submitSuccess, setSubmitSuccess] = useState('')
+  const [submittedBreakdown, setSubmittedBreakdown] = useState<{
+    numWeeks: number
+    numHands: number
+    ratePerHand: number
+    totalAmount: number
+    nextDueWeek: number
+  } | null>(null)
   const [activeHands, setActiveHands] = useState<{ planId: number; handName: string; weeklyAmount: number }[]>([
     { planId: 1, handName: 'Hand 1', weeklyAmount: 1300 },
   ])
@@ -72,7 +79,7 @@ export function PaymentHistory() {
   const nextDueWeek = Math.min(50, weeksCompleted + 1)
 
   // ── Fetch active hands & established status ────────────────────────────────
-  const fetchActiveHands = async () => {
+  const fetchActiveHands = async (forceHandsUpdate = false) => {
     if (!memberId || !isDoubleUp) return
     try {
       const q = new URLSearchParams()
@@ -89,7 +96,7 @@ export function PaymentHistory() {
             (data.user.weeks > 0 || data.user.saved > 0 || !data.user.isFirstPayment)
           )
           setHasEstablishedHands(isEstablished)
-          if (isEstablished) {
+          if (isEstablished && (forceHandsUpdate || !paymentOpen)) {
             const hands = Math.max(1, data.user.activeHands || 1)
             setNumHands(hands)
           }
@@ -165,6 +172,16 @@ export function PaymentHistory() {
     setSubmitting(true)
     setSubmitError('')
     setSubmitSuccess('')
+
+    const snapshot = {
+      numWeeks,
+      numHands,
+      ratePerHand,
+      totalAmount,
+      nextDueWeek,
+    }
+    setSubmittedBreakdown(snapshot)
+
     try {
       const targetPlanId = numHands === 1 && selectedPlanId ? selectedPlanId : null
       const selectedHandObj = activeHands.find((h) => h.planId === selectedPlanId)
@@ -231,7 +248,7 @@ export function PaymentHistory() {
   const handleManualRefresh = async () => {
     setRefreshing(true)
     try {
-      await Promise.all([fetchPayments(), fetchActiveHands()])
+      await Promise.all([fetchPayments(), fetchActiveHands(true)])
     } finally {
       setTimeout(() => setRefreshing(false), 400)
     }
@@ -247,6 +264,7 @@ export function PaymentHistory() {
     setBankRef('')
     setSubmitError('')
     setSubmitSuccess('')
+    setSubmittedBreakdown(null)
     setPaymentOpen(true)
     fetchActiveHands()
   }
@@ -414,19 +432,25 @@ export function PaymentHistory() {
                     <div className="space-y-1.5 text-xs text-gray-600">
                       <div className="flex justify-between">
                         <span>Weeks covered</span>
-                        <span className="font-bold text-brand-dark">{numWeeks} week{numWeeks !== 1 ? 's' : ''}</span>
+                        <span className="font-bold text-brand-dark">
+                          {(submittedBreakdown?.numWeeks ?? numWeeks)} week{(submittedBreakdown?.numWeeks ?? numWeeks) !== 1 ? 's' : ''}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Hands covered</span>
-                        <span className="font-bold text-brand-dark">{numHands} hand{numHands !== 1 ? 's' : ''}</span>
+                        <span className="font-bold text-brand-dark">
+                          {(submittedBreakdown?.numHands ?? numHands)} hand{(submittedBreakdown?.numHands ?? numHands) !== 1 ? 's' : ''}
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>Weekly rate per hand</span>
-                        <span className="font-bold text-brand-dark">{NAIRA(ratePerHand)}</span>
+                        <span className="font-bold text-brand-dark">
+                          {NAIRA(submittedBreakdown?.ratePerHand ?? ratePerHand)}
+                        </span>
                       </div>
                       <div className="mt-2 border-t border-brand/10 pt-2 flex justify-between font-bold text-brand-dark text-sm">
                         <span>Total Paid</span>
-                        <span>{NAIRA(totalAmount)}</span>
+                        <span>{NAIRA(submittedBreakdown?.totalAmount ?? totalAmount)}</span>
                       </div>
                     </div>
                   </div>

@@ -133,19 +133,23 @@ try {
     send_email('admin@digiajoglobal.com', $subjectAdmin, $msgAdmin);
 
     if ($weeksCovered > 1 && $hands > 1) {
-        $msg = "Payment received for {$handsLabel} ({$weeksLabel}). Once approved, ₦" . number_format(1300 * $hands, 2) . " will be allocated across each of your {$weeksLabel} (₦1,300.00 per hand/week).";
+        $weeklyTotal = 1300 * $hands;
+        $msg = "Payment of ₦" . number_format($amount, 2) . " received for {$handsLabel} across {$weeksLabel}. Once approved, ₦" . number_format($weeklyTotal, 2) . " will be allocated across each of your {$weeksLabel} (₦1,300.00 per hand/week).";
     } elseif ($hands > 1) {
-        $msg = "Payment received for {$handsLabel} ({$weeksLabel}). Once approved, ₦" . number_format(1300, 2) . " will be allocated to each of your {$handsLabel} (₦" . number_format($amount, 2) . " total for Week " . max(1, $weeksCovered) . ").";
+        $msg = "Payment of ₦" . number_format($amount, 2) . " received for {$handsLabel} (Week " . max(1, $weeksCovered) . "). Once approved, ₦1,300.00 will be allocated to each of your {$handsLabel}.";
     } elseif ($weeksCovered > 1) {
-        $msg = "Payment received for {$weeksLabel} (1 hand). Once approved, ₦1,300.00 will be credited across your {$weeksLabel}.";
+        $msg = "Payment of ₦" . number_format($amount, 2) . " received for {$weeksLabel} (1 hand). Once approved, ₦1,300.00 will be credited across each of your {$weeksLabel}.";
     } else {
-        $msg = "Weekly payment received. Once approved, ₦1,300.00 will be credited to your savings.";
+        $msg = "Weekly payment of ₦" . number_format($amount, 2) . " received. Once approved, ₦1,300.00 will be credited to your savings.";
     }
 
     echo json_encode([
         'success'   => true,
         'reference' => $reference,
         'message'   => $msg,
+        'hands'     => $hands,
+        'weeks'     => $weeksCovered,
+        'amount'    => $amount,
     ]);
 
 } catch (Exception $e) {

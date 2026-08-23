@@ -1,5 +1,5 @@
 import React from 'react'
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { Layout } from './components/layout/Layout'
 import { AppShell } from './components/dashboard/AppShell'
 import { Home } from './pages/Home'
@@ -51,7 +51,12 @@ function AdminRoute({ children, pageId }: { children: React.ReactNode, pageId: s
   return <>{children}</>
 }
 
-// ── One-time migration: wipe stale seed data if present from old build ────────
+// ── One-time migration: redirect old hash URLs to clean URLs ──────────────────
+if (typeof window !== 'undefined' && window.location.hash && window.location.hash.startsWith('#/')) {
+  const cleanPath = window.location.hash.substring(1)
+  window.history.replaceState(null, '', cleanPath)
+}
+
 const DATA_VERSION = 'v2'
 if (localStorage.getItem('digiajo_data_version') !== DATA_VERSION) {
   // clearSeedData()
@@ -59,7 +64,7 @@ if (localStorage.getItem('digiajo_data_version') !== DATA_VERSION) {
 }
 export function App() {
   return (
-    <HashRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <Routes>
         <Route element={<Layout />}>
           <Route path="/" element={<Home />} />
@@ -77,12 +82,19 @@ export function App() {
 
         <Route path="/login" element={<Login />} />
         <Route element={<AppShell role="member" />}>
-          <Route path="/dashboard" element={<MemberDashboard />} />
-          <Route path="/dashboard/payments" element={<PaymentHistory />} />
-          <Route path="/dashboard/savings" element={<SavingsHistory />} />
-          <Route path="/dashboard/referrals" element={<Referrals />} />
-          <Route path="/dashboard/notifications" element={<MemberNotifications />} />
-          <Route path="/dashboard/settings" element={<MemberSettings />} />
+          <Route path="/user" element={<MemberDashboard />} />
+          <Route path="/user/dashboard" element={<MemberDashboard />} />
+          <Route path="/user/payments" element={<PaymentHistory />} />
+          <Route path="/user/savings" element={<SavingsHistory />} />
+          <Route path="/user/referrals" element={<Referrals />} />
+          <Route path="/user/notifications" element={<MemberNotifications />} />
+          <Route path="/user/settings" element={<MemberSettings />} />
+          <Route path="/dashboard" element={<Navigate to="/user" replace />} />
+          <Route path="/dashboard/payments" element={<Navigate to="/user/payments" replace />} />
+          <Route path="/dashboard/savings" element={<Navigate to="/user/savings" replace />} />
+          <Route path="/dashboard/referrals" element={<Navigate to="/user/referrals" replace />} />
+          <Route path="/dashboard/notifications" element={<Navigate to="/user/notifications" replace />} />
+          <Route path="/dashboard/settings" element={<Navigate to="/user/settings" replace />} />
         </Route>
         <Route element={<AppShell role="admin" />}>
           <Route path="/admin" element={<AdminRoute pageId="dashboard"><AdminDashboard /></AdminRoute>} />
@@ -96,6 +108,6 @@ export function App() {
         </Route>
         <Route path="*" element={<NotFound />} />
       </Routes>
-    </HashRouter>
+    </BrowserRouter>
   )
 }

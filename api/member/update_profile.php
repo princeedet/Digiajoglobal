@@ -89,6 +89,21 @@ try {
         $upStmt->execute([$finalName, $finalEmail, $finalPhone, $initials, $userId]);
     }
 
+    try {
+        insert_notification($db, [
+            'user_id'     => $userId,
+            'member_id'   => $user['member_id'] ?? null,
+            'target_user' => $userId,
+            'audience'    => 'specific_user',
+            'title'       => !empty($password) ? 'Security & Profile Updated' : 'Profile Updated',
+            'body'        => !empty($password) ? 'Your security password and account profile information were updated successfully.' : 'Your profile details were updated successfully.',
+            'message'     => !empty($password) ? 'Your security password and account profile information were updated successfully.' : 'Your profile details were updated successfully.',
+            'kind'        => 'info',
+            'type'        => 'info',
+            'sent_at'     => date('Y-m-d H:i:s')
+        ]);
+    } catch (Exception $e) {}
+
     // 3. Return updated user
     echo json_encode([
         'success' => true,

@@ -59,14 +59,8 @@ try {
         $userId = (int)$user['id'];
         $actualMemberId = $user['member_id'] ?: "DA-{$userId}";
 
-        // Calculate weeks elapsed since start date
-        $startDateStr = $user['plan_start_date'] ?: $user['created_at'];
-        $startTimestamp = strtotime($startDateStr);
-        $nowTimestamp = time();
-        $secondsDiff = max(0, $nowTimestamp - $startTimestamp);
-        $weeksElapsed = max(1, min(50, (int)ceil($secondsDiff / (7 * 86400))));
-
         $weeksCompleted = (int)$user['weeks_completed'];
+        $userSavedAmount = (float)($user['saved'] ?? 0);
 
         // Fetch user active hands & weekly rate for 100% default penalty calculation
         $payHandsStmt = $db->prepare("
@@ -80,23 +74,38 @@ try {
         $weeklyRate = $activeHands * 1300.00;
         $defaultFineAmount = $weeklyRate; // 100% Default Penalty per policy
 
-        // Build week-by-week timeline
-        $timeline = [];
-        for ($w = 1; $w <= $weeksElapsed; $w++) {
-            $weekStart = $startTimestamp + (($w - 1) * 7 * 86400);
-            $weekEnd   = $weekStart + (6 * 86400);
-            $monthName = date('F Y', $weekStart);
-            $dateRange = date('d M', $weekStart) . ' - ' . date('d M Y', $weekEnd);
+        if ($weeksCompleted <= 0 && $userSavedAmount <= 0) {
+            $weeksElapsed = 0;
+            $missedWeeksCount = 0;
+            $timeline = [];
+        } else {
+            // Calculate weeks elapsed since start date
+            $startDateStr = $user['plan_start_date'] ?: $user['created_at'];
+            $startTimestamp = strtotime($startDateStr);
+            $nowTimestamp = time();
+            $secondsDiff = max(0, $nowTimestamp - $startTimestamp);
+            $weeksElapsed = max(1, min(50, (int)ceil($secondsDiff / (7 * 86400))));
 
-            $isPaid = ($w <= $weeksCompleted);
-            $timeline[] = [
-                'week'        => $w,
-                'month'       => $monthName,
-                'dateRange'   => $dateRange,
-                'status'      => $isPaid ? 'paid' : 'missed',
-                'hands'       => $activeHands,
-                'defaultFine' => $defaultFineAmount,
-            ];
+            // Build week-by-week timeline
+            $timeline = [];
+            for ($w = 1; $w <= $weeksElapsed; $w++) {
+                $weekStart = $startTimestamp + (($w - 1) * 7 * 86400);
+                $weekEnd   = $weekStart + (6 * 86400);
+                $monthName = date('F Y', $weekStart);
+                $dateRange = date('d M', $weekStart) . ' - ' . date('d M Y', $weekEnd);
+
+                $isPaid = ($w <= $weeksCompleted);
+                $timeline[] = [
+                    'week'        => $w,
+                    'month'       => $monthName,
+                    'dateRange'   => $dateRange,
+                    'status'      => $isPaid ? 'paid' : 'missed',
+                    'hands'       => $activeHands,
+                    'defaultFine' => $defaultFineAmount,
+                ];
+            }
+
+            $missedWeeksCount = max(0, $weeksElapsed - $weeksCompleted);
         }
 
         // Fetch fines for this user
@@ -117,7 +126,6 @@ try {
         }
         unset($f);
 
-        $missedWeeksCount = max(0, $weeksElapsed - $weeksCompleted);
         $isSuspensionEligible = ($missedWeeksCount >= 4);
 
         echo json_encode([
@@ -182,19 +190,18 @@ try {
             // Send notification to member
             try {
                 $notifMsg = "A fine of ₦" . number_format($amount, 2) . " has been issued for {$missedPeriod} ({$reason}). Please clear this fine to keep your account in good standing.";
-                // Try audience & body schema
-                try {
-                    $db->prepare("
-                        INSERT INTO notifications (title, body, kind, audience, target_user, sent_at)
-                        VALUES ('Late Payment Fine Issued', ?, 'warning', 'specific_user', ?, NOW())
-                    ")->execute([$notifMsg, $userId]);
-                } catch (Exception $ex) {
-                    // Fallback to legacy columns
-                    $db->prepare("
-                        INSERT INTO notifications (user_id, member_id, title, message, type)
-                        VALUES (?, ?, 'Late Payment Fine Issued', ?, 'warning')
-                    ")->execute([$userId, $actualMemberId, $notifMsg]);
-                }
+                insert_notification($db, [
+                    'user_id'     => $userId,
+                    'member_id'   => $actualMemberId,
+                    'target_user' => $userId,
+                    'audience'    => 'specific_user',
+                    'title'       => 'Late Payment Fine Issued',
+                    'body'        => $notifMsg,
+                    'message'     => $notifMsg,
+                    'kind'        => 'warning',
+                    'type'        => 'warning',
+                    'sent_at'     => date('Y-m-d H:i:s'),
+                ]);
             } catch (Exception $e) {}
 
             echo json_encode([

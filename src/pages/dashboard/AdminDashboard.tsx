@@ -144,7 +144,16 @@ export function AdminDashboard() {
       </div>
     )
   }
-  const pendingPayments = payments.filter((p: any) => p.status === 'pending')
+  const pendingPayments = React.useMemo(() => {
+    const seen = new Set<string>()
+    return payments.filter((p: any) => {
+      if (p.status !== 'pending') return false
+      const key = p.reference || p.id
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [payments])
 
   return (
     <>

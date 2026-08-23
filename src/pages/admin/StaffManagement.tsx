@@ -2,6 +2,8 @@ import React, { useEffect, useState, useCallback } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   CheckCircle2Icon,
+  EyeIcon,
+  EyeOffIcon,
   PencilIcon,
   PlusIcon,
   ShieldIcon,
@@ -52,6 +54,7 @@ function StaffModal({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
 
   const handleTogglePermission = (pageId: string) => {
     setForm(prev => {
@@ -180,13 +183,27 @@ function StaffModal({
               <label className="mb-1 block text-sm font-medium text-gray-700">
                 Password {staff && <span className="text-gray-400 font-normal">(leave blank to keep current)</span>}
               </label>
-              <input
-                type="password"
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-                className="w-full rounded-xl border border-gray-200 px-4 py-2 focus:border-brand focus:ring-2 focus:ring-brand/20 outline-none transition-all"
-                placeholder={staff ? "••••••••" : "Create password"}
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={form.password}
+                  onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  className="w-full rounded-xl border border-gray-200 px-4 py-2 pr-11 focus:border-brand focus:ring-2 focus:ring-brand/20 outline-none transition-all"
+                  placeholder={staff ? "••••••••" : "Create password"}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-brand transition"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? (
+                    <EyeOffIcon className="h-4 w-4" />
+                  ) : (
+                    <EyeIcon className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
             </div>
 
             {staff && (

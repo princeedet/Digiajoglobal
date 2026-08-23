@@ -1,6 +1,7 @@
 <?php
 // ─── DigiAjo Global — Admin Payments Management & Approval Endpoint ─────────
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../utils/email.php';
 $db = getDB();
 
 header('Content-Type: application/json');
@@ -66,8 +67,9 @@ try {
                 COALESCE(p.purpose, 'Registration Fee') as purpose,
                 COALESCE(p.payment_type, 'registration_fee') as payment_type
             FROM payments p
-            LEFT JOIN users u ON (u.id = p.user_id OR u.member_id = p.member_id)
-            ORDER BY p.created_at DESC
+            LEFT JOIN users u ON (p.user_id IS NOT NULL AND p.user_id > 0 AND u.id = p.user_id)
+            GROUP BY p.id
+            ORDER BY p.created_at DESC, p.id DESC
         ");
         $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -267,7 +269,7 @@ try {
                 }
 
                 // 6. If weekly contribution, update savings balance
-                if ($userId > 0 && ($paymentType === 'weekly_contribution' || str_contains(strtolower($payment['purpose'] ?? ''), 'contribution') || str_contains(strtolower($payment['purpose'] ?? ''), 'savings'))) {
+                if ($userId > 0 && $amount != 2000 && ($paymentType === 'weekly_contribution' || $paymentType === 'weekly' || str_contains(strtolower($payment['purpose'] ?? ''), 'contribution') || str_contains(strtolower($payment['purpose'] ?? ''), 'savings'))) {
                     try {
                         $weeksAdded = max(1, (int)($payment['weeks_covered'] ?? 1));
                         $db->prepare("
@@ -284,19 +286,104 @@ try {
                     } catch (Exception $e) {}
                 }
 
-                // 7. Send approval notification
-                if ($userId > 0) {
-                    try {
-                        $db->prepare("
-                            INSERT INTO notifications (user_id, member_id, title, message, type)
-                            VALUES (?, ?, 'Payment Approved', ?, 'success')
-                        ")->execute([
-                            $userId,
-                            $memberId,
-                            "Your payment of ₦" . number_format($amount, 2) . " (Ref: {$payment['payment_ref']}) has been confirmed and approved!"
-                        ]);
-                    } catch (Exception $e) {}
-                }
+                // 7. Send approval email & notification
+                try {
+                    $userStmt = $db->prepare("SELECT id, name, email, member_id, phone, saved, weeks FROM users WHERE id = ? OR member_id = ? LIMIT 1");
+                    $userStmt->execute([$userId, $memberId ?: '']);
+                    $userData = $userStmt->fetch(PDO::FETCH_ASSOC);
+
+                    $recipientEmail = !empty($userData['email']) ? $userData['email'] : ($payment['member_email'] ?? '');
+                    $recipientName = !empty($userData['name']) ? $userData['name'] : ($memberName ?: 'Valued Member');
+                    $recipientMemberId = !empty($userData['member_id']) ? $userData['member_id'] : ($memberId ?: '');
+                    $curSaved = (float)($userData['saved'] ?? 0);
+                    $curWeeks = (int)($userData['weeks'] ?? 0);
+                    $payRef = $payment['payment_ref'] ?: ('PAY-' . $dbPaymentId);
+
+                    $notifTitle = "Savings Payment Approved!";
+                    $notifMsg = "Your contribution of ₦" . number_format($amount, 2) . " (Ref: {$payRef}) has been approved! Total saved: ₦" . number_format($curSaved, 2) . " (Week {$curWeeks} of 50).";
+
+                    insert_notification($db, [
+                        'user_id'     => $userId,
+                        'member_id'   => $recipientMemberId,
+                        'target_user' => $userId,
+                        'audience'    => 'specific_user',
+                        'title'       => $notifTitle,
+                        'body'        => $notifMsg,
+                        'message'     => $notifMsg,
+                        'kind'        => 'success',
+                        'type'        => 'success',
+                        'sent_at'     => date('Y-m-d H:i:s'),
+                    ]);
+
+                    // Send approval confirmation email
+                    if (!empty($recipientEmail)) {
+                        $emailSubject = "Payment Approved — ₦" . number_format($amount, 2) . " Confirmed ({$payRef})";
+                        $isReg = ($amount == 2000 || $paymentType === 'registration_fee' || str_contains(strtolower($payment['purpose'] ?? ''), 'registration'));
+                        $purposeText = $isReg ? 'Registration Fee & Account Activation' : ($payment['purpose'] ?? 'Weekly Savings Contribution');
+
+                        $emailBody = "
+                            <p>Dear <strong>{$recipientName}</strong>,</p>
+                            <p>Great news! Your payment on <strong>DigiAjo Global</strong> has been confirmed and <strong style='color:#164f29;'>Approved</strong>.</p>
+                            <table style='width:100%; border-collapse:collapse; margin:20px 0;'>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Member ID:</td><td style='padding:8px 0; font-weight:bold;'>{$recipientMemberId}</td></tr>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Payment Reference:</td><td style='padding:8px 0; font-weight:bold; color:#164f29;'>{$payRef}</td></tr>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Amount Confirmed:</td><td style='padding:8px 0; font-weight:bold; font-size:18px; color:#164f29;'>₦" . number_format($amount, 2) . "</td></tr>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Purpose:</td><td style='padding:8px 0; font-weight:bold;'>{$purposeText}</td></tr>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Total Saved:</td><td style='padding:8px 0; font-weight:bold; color:#164f29;'>₦" . number_format($curSaved, 2) . "</td></tr>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Weeks Completed:</td><td style='padding:8px 0; font-weight:bold;'>Week {$curWeeks} of 50</td></tr>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Status:</td><td style='padding:8px 0; font-weight:bold; color:#164f29;'>Confirmed / Approved</td></tr>
+                            </table>
+                            <p>Your dashboard and savings timeline have been updated automatically.</p>
+                            <p><a href='https://digiajoglobal.com/user' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>View Your Dashboard</a></p>
+                        ";
+                        send_email($recipientEmail, $emailSubject, $emailBody);
+                    }
+                } catch (Exception $e) {}
+            } elseif ($status === 'rejected' || $status === 'declined') {
+                // Handle declined payment notification & email
+                try {
+                    $userStmt = $db->prepare("SELECT id, name, email, member_id FROM users WHERE id = ? OR member_id = ? LIMIT 1");
+                    $userStmt->execute([$userId, $memberId ?: '']);
+                    $userData = $userStmt->fetch(PDO::FETCH_ASSOC);
+
+                    $recipientEmail = !empty($userData['email']) ? $userData['email'] : ($payment['member_email'] ?? '');
+                    $recipientName = !empty($userData['name']) ? $userData['name'] : ($memberName ?: 'Valued Member');
+                    $recipientMemberId = !empty($userData['member_id']) ? $userData['member_id'] : ($memberId ?: '');
+                    $payRef = $payment['payment_ref'] ?: ('PAY-' . $dbPaymentId);
+
+                    $notifTitle = "Payment Verification Declined";
+                    $notifMsg = "Your payment submission of ₦" . number_format($amount, 2) . " (Ref: {$payRef}) was declined. Please verify your transaction receipt or re-submit.";
+
+                    insert_notification($db, [
+                        'user_id'     => $userId,
+                        'member_id'   => $recipientMemberId,
+                        'target_user' => $userId,
+                        'audience'    => 'specific_user',
+                        'title'       => $notifTitle,
+                        'body'        => $notifMsg,
+                        'message'     => $notifMsg,
+                        'kind'        => 'error',
+                        'type'        => 'error',
+                        'sent_at'     => date('Y-m-d H:i:s'),
+                    ]);
+
+                    if (!empty($recipientEmail)) {
+                        $emailSubject = "Payment Update — Verification Declined ({$payRef})";
+                        $emailBody = "
+                            <p>Dear <strong>{$recipientName}</strong>,</p>
+                            <p>We are writing to inform you that your payment transfer submission on <strong>DigiAjo Global</strong> could not be verified by the admin team.</p>
+                            <table style='width:100%; border-collapse:collapse; margin:20px 0;'>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Member ID:</td><td style='padding:8px 0; font-weight:bold;'>{$recipientMemberId}</td></tr>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Payment Reference:</td><td style='padding:8px 0; font-weight:bold; color:#b91c1c;'>{$payRef}</td></tr>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Amount:</td><td style='padding:8px 0; font-weight:bold;'>₦" . number_format($amount, 2) . "</td></tr>
+                                <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Status:</td><td style='padding:8px 0; font-weight:bold; color:#b91c1c;'>Declined</td></tr>
+                            </table>
+                            <p>If you have made this transfer, please ensure your payment receipt is clear and re-submit via your payment portal or contact support.</p>
+                            <p><a href='https://digiajoglobal.com/user/payments' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Go to Payment Portal</a></p>
+                        ";
+                        send_email($recipientEmail, $emailSubject, $emailBody);
+                    }
+                } catch (Exception $e) {}
             }
 
             $db->commit();

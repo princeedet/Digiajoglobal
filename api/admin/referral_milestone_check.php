@@ -44,20 +44,31 @@ function check_referral_milestones(PDO $db): void {
             $notifTitle = "🎉 Referral Milestone: $referrerName";
             $notifBody  = "$referrerName ($memberIdStr) has reached $activeCount completed referrals and qualifies for a food item milestone bonus reward. Please process the reward.";
 
-            $ins = $db->prepare("
-                INSERT INTO notifications (title, body, kind, audience)
-                VALUES (?, ?, 'referral', 'admin')
-            ");
-            $ins->execute([$notifTitle, $notifBody]);
+            insert_notification($db, [
+                'audience' => 'admin',
+                'title'    => $notifTitle,
+                'body'     => $notifBody,
+                'message'  => $notifBody,
+                'kind'     => 'referral',
+                'type'     => 'referral',
+                'sent_at'  => date('Y-m-d H:i:s'),
+            ]);
 
             // Also notify the member themselves
             $memberNotifTitle = "🎁 Milestone Bonus Unlocked!";
             $memberNotifBody  = "Congratulations! You've reached $activeCount completed referrals. Your food item bonus reward is being processed. Our team will reach out to you soon!";
-            $insM = $db->prepare("
-                INSERT INTO notifications (title, body, kind, audience, target_user)
-                VALUES (?, ?, 'referral', 'specific_user', ?)
-            ");
-            $insM->execute([$memberNotifTitle, $memberNotifBody, $referrerId]);
+            
+            insert_notification($db, [
+                'target_user' => $referrerId,
+                'user_id'     => $referrerId,
+                'audience'    => 'specific_user',
+                'title'       => $memberNotifTitle,
+                'body'        => $memberNotifBody,
+                'message'     => $memberNotifBody,
+                'kind'        => 'referral',
+                'type'        => 'referral',
+                'sent_at'     => date('Y-m-d H:i:s'),
+            ]);
 
             // Email the admin
             $adminEmail = 'admin@digiajoglobal.com';

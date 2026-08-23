@@ -228,6 +228,46 @@ try {
             ]);
         }
 
+        // Insert notification for user, referrer, and admin
+        try {
+            insert_notification($db, [
+                'user_id'     => $dbUserId,
+                'member_id'   => $memberId,
+                'target_user' => $dbUserId,
+                'audience'    => 'specific_user',
+                'title'       => 'Welcome to DigiAjo Global',
+                'body'        => "Welcome to DigiAjo Global! Your account was registered for {$planInfo['label']}. Your registration fee of ₦" . number_format($planInfo['fee'], 2) . " (Ref: {$txRef}) is pending admin verification.",
+                'message'     => "Welcome to DigiAjo Global! Your account was registered for {$planInfo['label']}. Your registration fee of ₦" . number_format($planInfo['fee'], 2) . " (Ref: {$txRef}) is pending admin verification.",
+                'kind'        => 'info',
+                'type'        => 'info',
+                'sent_at'     => date('Y-m-d H:i:s')
+            ]);
+
+            if (!empty($referredBy)) {
+                insert_notification($db, [
+                    'user_id'     => $referredBy,
+                    'target_user' => $referredBy,
+                    'audience'    => 'specific_user',
+                    'title'       => '🎉 New Referral Joined!',
+                    'body'        => "{$name} just registered using your referral link.",
+                    'message'     => "{$name} just registered using your referral link.",
+                    'kind'        => 'referral',
+                    'type'        => 'referral',
+                    'sent_at'     => date('Y-m-d H:i:s')
+                ]);
+            }
+
+            insert_notification($db, [
+                'audience'    => 'admin',
+                'title'       => 'New Member Registration',
+                'body'        => "{$name} ({$memberId}) registered for {$planInfo['label']}.",
+                'message'     => "{$name} ({$memberId}) registered for {$planInfo['label']}.",
+                'kind'        => 'update',
+                'type'        => 'update',
+                'sent_at'     => date('Y-m-d H:i:s')
+            ]);
+        } catch (Exception $e) {}
+
         // Send registration emails
         try {
             $subjectUser = "Welcome to DigiAjo Global — Registration Received ({$memberId})";
@@ -243,7 +283,7 @@ try {
                 <p>" . ($paymentStatus === 'approved' 
                     ? "Your payment is confirmed and your account is active! You can sign in immediately using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number)." 
                     : "Our administrators will review and confirm your bank transfer. Once confirmed, you can log in to your dashboard using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number: <strong>{$defaultPass}</strong>).") . "</p>
-                <p><a href='https://digiajoglobal.com/#/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
+                <p><a href='https://digiajoglobal.com/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
             ";
             send_email($email, $subjectUser, $msgUser);
 
@@ -260,7 +300,7 @@ try {
                     <li><strong>Amount:</strong> ₦" . number_format($planInfo['fee'], 2) . "</li>
                     <li><strong>Channel:</strong> {$channel}</li>
                 </ul>
-                <p>Please review and approve in the <a href='https://digiajoglobal.com/#/admin/payments'>Admin Portal</a>.</p>
+                <p>Please review and approve in the <a href='https://digiajoglobal.com/admin/payments'>Admin Portal</a>.</p>
             ";
             send_email('admin@digiajoglobal.com', $subjectAdmin, $msgAdmin);
         } catch (Exception $e) {}
@@ -431,7 +471,7 @@ try {
             <p>" . ($paymentStatus === 'approved' 
                 ? "Your payment is confirmed and your account is active! You can sign in immediately using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number)." 
                 : "Our administrators will review and confirm your bank transfer. Once confirmed, you can log in to your dashboard using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number: <strong>{$defaultPass}</strong>).") . "</p>
-            <p><a href='https://digiajoglobal.com/#/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
+            <p><a href='https://digiajoglobal.com/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
         ";
         send_email($email, $subjectUser, $msgUser);
 
@@ -448,7 +488,7 @@ try {
                 <li><strong>Amount:</strong> ₦" . number_format($planInfo['fee'], 2) . "</li>
                 <li><strong>Channel:</strong> {$channel}</li>
             </ul>
-            <p>Please review and approve in the <a href='https://digiajoglobal.com/#/admin/payments'>Admin Portal</a>.</p>
+            <p>Please review and approve in the <a href='https://digiajoglobal.com/admin/payments'>Admin Portal</a>.</p>
         ";
         send_email('admin@digiajoglobal.com', $subjectAdmin, $msgAdmin);
     } catch (Exception $e) {}

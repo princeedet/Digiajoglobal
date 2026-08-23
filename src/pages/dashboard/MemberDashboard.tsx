@@ -207,7 +207,8 @@ export function MemberDashboard() {
   const completion = isDigiMart ? 100 : Math.min(100, Math.round((weeksCompleted / totalWeeksPossible) * 100))
   
   // 50-Week Cycle: Fixed hands * ₦1,300 * 50 weeks -> 100% Double-Up Reward
-  const isSuspended = user?.status === 'suspended' || (user as any)?.isSuspended || ((user as any)?.missedWeeks >= 4)
+  const hasSavingsStarted = (savedAmount > 0 || weeksCompleted > 0)
+  const isSuspended = hasSavingsStarted && (user?.status === 'suspended' || (user as any)?.isSuspended || ((user as any)?.missedWeeks >= 4))
   const targetAmount = isDigiMart ? 100000 : (activeHands * 1300 * 50)
   
   // When suspended due to 4 weeks default, user forfeits bonus and receives strictly their principal savings
@@ -267,7 +268,7 @@ export function MemberDashboard() {
             </div>
           </div>
           <Link
-            to="/dashboard/settings"
+            to="/user/settings"
             className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-xs font-bold text-white hover:bg-brand-dark transition shrink-0"
           >
             <LockKeyholeIcon className="h-3.5 w-3.5" /> Update Profile
@@ -302,7 +303,7 @@ export function MemberDashboard() {
         description={`Here is a clear view of your ${plan} journey.`}
         action={
           <Link
-            to="/dashboard/payments"
+            to="/user/payments"
             className="inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2.5 text-sm font-bold text-white hover:bg-brand-dark transition"
           >
             Make payment <ArrowRightIcon className="h-4 w-4" />
@@ -434,7 +435,7 @@ export function MemberDashboard() {
                 {isDigiMart ? "Asset-backed retail returns from logistics & supermarkets." : "Due before 11:59 PM. Paying early keeps your savings smooth."}
               </p>
               <Link
-                to="/dashboard/payments"
+                to="/user/payments"
                 className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-4 py-3 text-sm font-bold text-white hover:bg-brand-dark transition"
               >
                 <CreditCardIcon className="h-4 w-4" /> {isDigiMart ? "Buy more units" : "Make payment"}
@@ -454,7 +455,7 @@ export function MemberDashboard() {
                   </p>
                 </div>
                 <Link
-                  to="/dashboard/payments"
+                  to="/user/payments"
                   className="text-sm font-bold text-brand hover:text-brand-dark transition"
                 >
                   View all
@@ -543,7 +544,7 @@ export function MemberDashboard() {
                   </p>
                 </div>
                 <Link
-                  to="/dashboard/referrals"
+                  to="/user/referrals"
                   className="text-sm font-bold text-brand hover:text-brand-dark transition"
                 >
                   Details
@@ -564,8 +565,8 @@ export function MemberDashboard() {
                   No updates found.
                 </div>
               )}
-              {derivedActivity.map((item) => (
-                <div key={item.title + item.time} className="flex gap-3 px-5 py-4 animate-fadeIn">
+              {derivedActivity.map((item, idx) => (
+                <div key={`${item.title}-${item.time}-${idx}`} className="flex gap-3 px-5 py-4 animate-fadeIn">
                   <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand">
                     <BellRingIcon className="h-4 w-4" />
                   </span>
@@ -676,7 +677,7 @@ export function MemberDashboard() {
                   </button>
                   {weeksCompleted < 50 && (
                     <Link
-                      to="/dashboard/payments"
+                      to="/user/payments"
                       onClick={() => setWithdrawModalOpen(false)}
                       className="flex-1 rounded-xl bg-brand py-3 text-xs font-bold text-white hover:bg-brand-dark transition shadow-sm text-center"
                     >

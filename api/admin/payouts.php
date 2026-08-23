@@ -57,8 +57,18 @@ try {
         $notifBody .= "\n\nNote: $notes";
     }
 
-    $stmt = $db->prepare("INSERT INTO notifications (title, body, kind, audience, target_user) VALUES (?, ?, 'payout', 'specific_user', ?)");
-    $stmt->execute([$notifTitle, $notifBody, $internalUserId]);
+    insert_notification($db, [
+        'target_user' => $internalUserId,
+        'user_id'     => $internalUserId,
+        'member_id'   => $user['member_id'] ?? null,
+        'audience'    => 'specific_user',
+        'title'       => $notifTitle,
+        'body'        => $notifBody,
+        'message'     => $notifBody,
+        'kind'        => 'payout',
+        'type'        => 'payout',
+        'sent_at'     => date('Y-m-d H:i:s'),
+    ]);
 
     // Send email
     $emailBody = "<p>Hi {$user['name']},</p><p>" . nl2br($notifBody) . "</p>";

@@ -126,7 +126,7 @@ export function Login() {
           }
         }
         setLoading(false)
-        navigate(data.role === 'admin' ? '/admin' : '/dashboard')
+        navigate(data.role === 'admin' ? '/admin' : '/user')
         return
       } else {
         setLoading(false)
@@ -189,7 +189,7 @@ export function Login() {
         return
       }
       setCurrentUser({ ...matchedMember, role: 'member', needsSecurityUpdate: !customP })
-      navigate('/dashboard')
+      navigate('/user')
     } else {
       // Static demo member fallback
       const expected = credentials.member
@@ -211,7 +211,7 @@ export function Login() {
           role: 'member',
           needsSecurityUpdate: true,
         })
-        navigate('/dashboard')
+        navigate('/user')
       } else {
         setError('Account not found. Please register to get started.')
       }

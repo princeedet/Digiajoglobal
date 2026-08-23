@@ -89,6 +89,7 @@ try {
             $stmt = $db->query("
                 SELECT
                     COALESCE(NULLIF(u.member_id, ''), CONCAT('DA-', u.id)) as id,
+                    u.id as user_id,
                     u.name,
                     u.email,
                     COALESCE(u.phone, '') as phone,
@@ -148,6 +149,7 @@ try {
             $stmt = $db->query("
                 SELECT
                     COALESCE(NULLIF(u.member_id, ''), CONCAT('DA-', u.id)) as id,
+                    u.id as user_id,
                     u.name,
                     u.email,
                     COALESCE(u.phone, '') as phone,
@@ -174,11 +176,26 @@ try {
                 $m['plan'] = 'DigiMart';
             }
 
-            // Auto-suspend check: 4 missed weeks
+            // Auto-suspend check: 4 missed weeks (only for members who have actually started saving)
             $joinedStr = $m['joined'] ?? 'now';
             $joinedTime = strtotime($joinedStr) ?: time();
-            $elapsed = max(1, min(50, (int)ceil(max(0, time() - $joinedTime) / (7 * 86400))));
-            $missed = max(0, $elapsed - $m['weeks']);
+
+            if ($m['weeks'] <= 0 && $m['saved'] <= 0) {
+                $elapsed = 0;
+                $missed = 0;
+                // If member was mistakenly auto-suspended with 0 savings, restore active status
+                if ($m['status'] === 'suspended') {
+                    $m['status'] = 'active';
+                    try {
+                        $cleanId = preg_replace('/\D/', '', $m['id']);
+                        $db->prepare("UPDATE users SET status = 'active' WHERE (member_id = ? OR id = ?) AND (saved = 0 OR saved IS NULL)")->execute([$m['id'], $cleanId]);
+                    } catch (Exception $e) {}
+                }
+            } else {
+                $elapsed = max(1, min(50, (int)ceil(max(0, time() - $joinedTime) / (7 * 86400))));
+                $missed = max(0, $elapsed - $m['weeks']);
+            }
+
             $m['missed_weeks'] = $missed;
 
             if ($missed >= 4 && $m['status'] === 'active') {
@@ -257,10 +274,18 @@ try {
 
             // Send notification
             try {
-                $db->prepare("
-                    INSERT INTO notifications (user_id, member_id, title, message, type)
-                    VALUES (?, ?, 'Account Approved & Active', 'Your DigiAjo Global account has been approved. You can now log in and manage your savings.', 'success')
-                ")->execute([$userId, $memberId]);
+                insert_notification($db, [
+                    'user_id'     => $userId,
+                    'member_id'   => $memberId,
+                    'target_user' => $userId,
+                    'audience'    => 'specific_user',
+                    'title'       => 'Account Approved & Active',
+                    'body'        => 'Your DigiAjo Global account has been approved. You can now log in and manage your savings.',
+                    'message'     => 'Your DigiAjo Global account has been approved. You can now log in and manage your savings.',
+                    'kind'        => 'success',
+                    'type'        => 'success',
+                    'sent_at'     => date('Y-m-d H:i:s'),
+                ]);
             } catch (Exception $e) {}
 
             // Send confirmation email
@@ -277,7 +302,7 @@ try {
                         <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Status:</td><td style='padding:8px 0; font-weight:bold; color:#164f29;'>Active</td></tr>
                     </table>
                     <p>You can now sign in to your dashboard to view your savings plan, make weekly contributions, and track your progress.</p>
-                    <p><a href='https://digiajoglobal.com/#/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
+                    <p><a href='https://digiajoglobal.com/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
                 ";
                 send_email($user['email'], $subject, $message);
             } catch (Exception $e) {}

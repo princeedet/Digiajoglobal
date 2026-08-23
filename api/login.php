@@ -183,6 +183,16 @@ if ($user['status'] === 'pending_verification') {
     }
 }
 
+$userDbSavedCheck = (float)($user['saved'] ?? 0);
+$userDbWeeksCheck = (int)($user['weeks'] ?? 0);
+
+if ($user['status'] === 'suspended' && $userDbSavedCheck <= 0 && $userDbWeeksCheck <= 0) {
+    try {
+        $db->prepare("UPDATE users SET status = 'active' WHERE id = ? AND (saved = 0 OR saved IS NULL)")->execute([$user['id']]);
+        $user['status'] = 'active';
+    } catch (Exception $e) {}
+}
+
 if ($user['status'] === 'suspended') {
     http_response_code(403);
     echo json_encode([
@@ -193,9 +203,29 @@ if ($user['status'] === 'suspended') {
 }
 
 // ─── Fetch Savings Data ───────────────────────────────────────────────────────
-$saved = (float)($user['saved'] ?? 0);
-$weeks = (int)($user['weeks'] ?? 0);
+$userId = (int)$user['id'];
+$officialMemberId = $user['member_id'] ?: ('DA-' . $userId);
+
+$userDbSaved = (float)($user['saved'] ?? 0);
+$userDbWeeks = (int)($user['weeks'] ?? 0);
+$spSaved     = 0.0;
+$spWeeks     = 0;
+$calcSaved   = 0.0;
+$calcWeeks   = 0;
 $activeHands = 1;
+
+// 1. Check savings_plans table
+try {
+    $spStmt = $db->prepare('SELECT plan_type, total_saved, weeks_completed, start_date FROM savings_plans WHERE user_id = ? ORDER BY created_at DESC LIMIT 1');
+    $spStmt->execute([$userId]);
+    $sp = $spStmt->fetch(PDO::FETCH_ASSOC);
+    if ($sp) {
+        $spSaved = (float)($sp['total_saved'] ?? 0);
+        $spWeeks = (int)($sp['weeks_completed'] ?? 0);
+    }
+} catch (PDOException $e) {}
+
+// 2. Calculate from approved payments
 try {
     $payStmt = $db->prepare("
         SELECT 
@@ -204,7 +234,7 @@ try {
             COALESCE(SUM(amount), 0) as calc_saved,
             MAX(COALESCE(NULLIF(hands, 0), ROUND(amount / 1300), 1)) as calc_hands
         FROM payments
-        WHERE (user_id = ? OR member_id = ?) 
+        WHERE (user_id = ? OR member_id = ? OR member_name = ?) 
           AND status IN ('approved', 'confirmed', 'success')
           AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
           AND (purpose IS NULL OR (
@@ -215,7 +245,7 @@ try {
           ))
           AND amount != 2000
     ");
-    $payStmt->execute([$user['id'], $user['member_id']]);
+    $payStmt->execute([$userId, $officialMemberId, $user['name']]);
     $calc = $payStmt->fetch(PDO::FETCH_ASSOC);
 
     $calcWeeks = (int)($calc['calc_weeks'] ?? 0);
@@ -224,8 +254,7 @@ try {
 
     $lastPayStmt = $db->prepare("
         SELECT hands, amount FROM payments 
-        WHERE (user_id = ? OR member_id = ?)
-          AND status IN ('approved', 'confirmed', 'success')
+        WHERE (user_id = ? OR member_id = ? OR member_name = ?)
           AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
           AND (purpose IS NULL OR (
               LOWER(purpose) NOT LIKE '%registration%' 
@@ -234,9 +263,9 @@ try {
               AND LOWER(purpose) NOT LIKE '%fine%'
           ))
           AND amount != 2000
-        ORDER BY created_at DESC LIMIT 1
+        ORDER BY id DESC LIMIT 1
     ");
-    $lastPayStmt->execute([$user['id'], $user['member_id']]);
+    $lastPayStmt->execute([$userId, $officialMemberId, $user['name']]);
     $lastPay = $lastPayStmt->fetch(PDO::FETCH_ASSOC);
     if ($lastPay) {
         $amt = (float)$lastPay['amount'];
@@ -248,13 +277,14 @@ try {
     } else {
         $activeHands = $calcHands;
     }
-
-    $saved = $calcSaved;
-    $weeks = $calcWeeks;
-    if ($weeks === 0 && $saved > 0 && $activeHands > 0) {
-        $weeks = max(1, (int)round($saved / ($activeHands * 1300)));
-    }
 } catch (PDOException $e) { /* non-fatal */ }
+
+$saved = max($calcSaved, $userDbSaved, $spSaved);
+$weeks = max($calcWeeks, $userDbWeeks, $spWeeks);
+
+if ($weeks === 0 && $saved > 0 && $activeHands > 0) {
+    $weeks = max(1, (int)round($saved / ($activeHands * 1300)));
+}
 
 // ─── Update last login ─────────────────────────────────────────────────────
 try {
@@ -266,13 +296,13 @@ echo json_encode([
     'success' => true,
     'role'    => 'member',
     'user'    => [
-        'id'                  => $user['member_id'],
+        'id'                  => $officialMemberId,
         'name'                => $user['name'],
         'email'               => $user['email'],
         'phone'               => $user['phone'],
         'initials'            => $user['initials'] ?: strtoupper(substr($user['name'], 0, 2)),
         'joined'              => date('d M Y', strtotime($user['created_at'])),
-        'saved'               => (int)$saved,
+        'saved'               => (float)$saved,
         'status'              => $user['status'],
         'plan'                => $user['plan_type'] ?? 'Double Up',
         'weeks'               => (int)$weeks,

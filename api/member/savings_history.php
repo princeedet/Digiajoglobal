@@ -258,9 +258,9 @@ try {
 
     // Calculate total saved and completed weeks
     $approvedWeeks = array_filter($weeks, fn($w) => $w['status'] === 'approved');
-    $effectiveCompletedWeeks = count($approvedWeeks);
+    $effectiveCompletedWeeks = max(count($approvedWeeks), $userWeeks);
     $approvedSaved = array_sum(array_map(fn($w) => (float)$w['amount'], $approvedWeeks));
-    $finalTotalSaved = $approvedSaved > 0 ? $approvedSaved : $userSaved;
+    $finalTotalSaved = max($approvedSaved, $userSaved);
 
     // Latest active weekly rate based on hands
     $latestHands = 1;

@@ -33,7 +33,7 @@ export function Toast() {
             y: 16,
           }}
           role="status"
-          className="fixed bottom-5 right-5 z-[70] flex max-w-sm items-start gap-3 rounded-2xl border border-gray-100 bg-white p-4 shadow-xl"
+          className="fixed top-4 inset-x-3 sm:inset-x-auto sm:top-auto sm:bottom-5 sm:right-5 z-[100] flex max-w-md items-start gap-3 rounded-2xl border border-brand/20 bg-white/95 backdrop-blur-md p-4 shadow-2xl ring-1 ring-black/5"
         >
           <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${color}`} />
           <p className="text-sm leading-relaxed text-gray-700">

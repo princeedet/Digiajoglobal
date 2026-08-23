@@ -130,12 +130,19 @@ try {
             // Add notification for user
             try {
                 $formattedFine = number_format($fineAmount, 0);
-                $db->prepare("
-                    INSERT INTO notifications (user_id, member_id, title, message, type)
-                    VALUES (?, ?, 'Late Payment Fine Applied',
-                        'A 100% fine of ₦{$formattedFine} has been applied for your Week {$weekNum} payment missed beyond the 5-hour grace period.',
-                        'warning')
-                ")->execute([$userId, $memberId]);
+                $fineMsg = "A 100% fine of ₦{$formattedFine} has been applied for your Week {$weekNum} payment missed beyond the 5-hour grace period.";
+                insert_notification($db, [
+                    'user_id'     => $userId,
+                    'member_id'   => $memberId,
+                    'target_user' => $userId,
+                    'audience'    => 'specific_user',
+                    'title'       => 'Late Payment Fine Applied',
+                    'body'        => $fineMsg,
+                    'message'     => $fineMsg,
+                    'kind'        => 'warning',
+                    'type'        => 'warning',
+                    'sent_at'     => date('Y-m-d H:i:s'),
+                ]);
             } catch (PDOException $e) { /* non-fatal */ }
 
             $db->commit();

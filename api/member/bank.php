@@ -152,6 +152,18 @@ try {
         // Clear security update flag on user
         try {
             $db->prepare('UPDATE users SET needs_security_update = 0 WHERE id = ?')->execute([$userId]);
+            insert_notification($db, [
+                'user_id'     => $userId,
+                'member_id'   => $user['member_id'] ?? null,
+                'target_user' => $userId,
+                'audience'    => 'specific_user',
+                'title'       => 'Bank Payout Details Saved',
+                'body'        => "Your bank account details ({$bankName} — {$accountNumber}) have been securely updated.",
+                'message'     => "Your bank account details ({$bankName} — {$accountNumber}) have been securely updated.",
+                'kind'        => 'info',
+                'type'        => 'info',
+                'sent_at'     => date('Y-m-d H:i:s')
+            ]);
         } catch (Exception $e) {}
 
         echo json_encode([

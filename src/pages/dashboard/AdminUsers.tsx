@@ -8,6 +8,8 @@ import {
   CheckIcon,
   ClockIcon,
   DollarSignIcon,
+  EyeIcon,
+  EyeOffIcon,
   InfoIcon,
   KeyRoundIcon,
   LockIcon,
@@ -92,34 +94,42 @@ function FinesAndMissedWeeksModal({
       }
       throw new Error('Fallback')
     } catch {
-      // Resilient local fallback calculation based on join date vs user.weeks
-      const joinedStr = (user as any).joined || '01 Jan 2026'
-      const joinedDate = new Date(joinedStr)
-      const now = new Date()
-      const diffMs = Math.max(0, now.getTime() - (isNaN(joinedDate.getTime()) ? now.getTime() - 86400000 * 28 : joinedDate.getTime()))
-      const elapsed = Math.max(1, Math.min(50, Math.ceil(diffMs / (7 * 86400000))))
       const completed = user.weeks || 0
-      const missed = Math.max(0, elapsed - completed)
+      const savedAmount = Number(user.saved || 0)
 
-      const localTimeline: TimelineItem[] = []
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      const startRef = isNaN(joinedDate.getTime()) ? new Date(now.getTime() - (elapsed - 1) * 7 * 86400000) : joinedDate
+      if (completed <= 0 && savedAmount <= 0) {
+        setWeeksElapsed(0)
+        setWeeksCompleted(0)
+        setMissedCount(0)
+        setTimeline([])
+      } else {
+        const joinedStr = (user as any).joined || '01 Jan 2026'
+        const joinedDate = new Date(joinedStr)
+        const now = new Date()
+        const diffMs = Math.max(0, now.getTime() - (isNaN(joinedDate.getTime()) ? now.getTime() - 86400000 * 28 : joinedDate.getTime()))
+        const elapsed = Math.max(1, Math.min(50, Math.ceil(diffMs / (7 * 86400000))))
+        const missed = Math.max(0, elapsed - completed)
 
-      for (let w = 1; w <= elapsed; w++) {
-        const wStart = new Date(startRef.getTime() + (w - 1) * 7 * 86400000)
-        const wEnd = new Date(wStart.getTime() + 6 * 86400000)
-        localTimeline.push({
-          week: w,
-          month: `${wStart.toLocaleString('default', { month: 'long' })} ${wStart.getFullYear()}`,
-          dateRange: `${wStart.getDate()} ${monthNames[wStart.getMonth()]} - ${wEnd.getDate()} ${monthNames[wEnd.getMonth()]} ${wEnd.getFullYear()}`,
-          status: w <= completed ? 'paid' : 'missed',
-        })
+        const localTimeline: TimelineItem[] = []
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+        const startRef = isNaN(joinedDate.getTime()) ? new Date(now.getTime() - (elapsed - 1) * 7 * 86400000) : joinedDate
+
+        for (let w = 1; w <= elapsed; w++) {
+          const wStart = new Date(startRef.getTime() + (w - 1) * 7 * 86400000)
+          const wEnd = new Date(wStart.getTime() + 6 * 86400000)
+          localTimeline.push({
+            week: w,
+            month: `${wStart.toLocaleString('default', { month: 'long' })} ${wStart.getFullYear()}`,
+            dateRange: `${wStart.getDate()} ${monthNames[wStart.getMonth()]} - ${wEnd.getDate()} ${monthNames[wEnd.getMonth()]} ${wEnd.getFullYear()}`,
+            status: w <= completed ? 'paid' : 'missed',
+          })
+        }
+
+        setWeeksElapsed(elapsed)
+        setWeeksCompleted(completed)
+        setMissedCount(missed)
+        setTimeline(localTimeline)
       }
-
-      setWeeksElapsed(elapsed)
-      setWeeksCompleted(completed)
-      setMissedCount(missed)
-      setTimeline(localTimeline)
 
       // Load stored fines
       const stored = localStorage.getItem(`digiajo_fines_${user.id}`)
@@ -862,12 +872,23 @@ function DeleteConfirmModal({
 
 // Helper to calculate missed payment status for any member
 function getMemberMissedStatus(member: MemberUser) {
+  const completedWeeks = member.weeks || 0
+  const savedAmount = Number(member.saved || 0)
+
+  if (completedWeeks <= 0 && savedAmount <= 0) {
+    return {
+      elapsedWeeks: 0,
+      completedWeeks: 0,
+      missedWeeks: 0,
+      hasMissed: false,
+    }
+  }
+
   const joinedStr = (member as any).joined || '01 Jan 2026'
   const joinedDate = new Date(joinedStr)
   const now = new Date()
   const diffMs = Math.max(0, now.getTime() - (isNaN(joinedDate.getTime()) ? now.getTime() - 86400000 * 28 : joinedDate.getTime()))
   const elapsedWeeks = Math.max(1, Math.min(50, Math.ceil(diffMs / (7 * 86400000))))
-  const completedWeeks = member.weeks || 0
   const missedWeeks = Math.max(0, elapsedWeeks - completedWeeks)
 
   return {
@@ -890,12 +911,14 @@ export function AdminUsers() {
   const [checkedIds, setCheckedIds]   = useState<Set<string>>(new Set())
 
   // Reset password modal state
-  const [showResetModal,   setShowResetModal]   = useState(false)
-  const [newPassword,      setNewPassword]      = useState('')
-  const [confirmPassword,  setConfirmPassword]  = useState('')
-  const [resetLoading,     setResetLoading]     = useState(false)
-  const [resetError,       setResetError]       = useState('')
-  const [resetSuccess,     setResetSuccess]     = useState('')
+  const [showResetModal,       setShowResetModal]       = useState(false)
+  const [newPassword,          setNewPassword]          = useState('')
+  const [confirmPassword,      setConfirmPassword]      = useState('')
+  const [showNewPassword,      setShowNewPassword]      = useState(false)
+  const [showConfirmPassword,  setShowConfirmPassword]  = useState(false)
+  const [resetLoading,         setResetLoading]         = useState(false)
+  const [resetError,           setResetError]           = useState('')
+  const [resetSuccess,         setResetSuccess]         = useState('')
 
   const handleQuickApprove = async (m: MemberUser) => {
     try {
@@ -963,6 +986,8 @@ export function AdminUsers() {
     setConfirmPassword('')
     setResetError('')
     setResetSuccess('')
+    setShowNewPassword(false)
+    setShowConfirmPassword(false)
     setShowResetModal(true)
   }
 
@@ -1614,25 +1639,53 @@ export function AdminUsers() {
                   <div className="mt-6 space-y-4">
                     <div>
                       <label className="mb-1.5 block text-sm font-semibold text-gray-700">New Password</label>
-                      <input
-                        type="password"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm placeholder-gray-400 transition focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
-                        placeholder="Min. 6 characters"
-                        autoFocus
-                      />
+                      <div className="relative">
+                        <input
+                          type={showNewPassword ? 'text' : 'password'}
+                          value={newPassword}
+                          onChange={(e) => setNewPassword(e.target.value)}
+                          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 pr-11 text-sm placeholder-gray-400 transition focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+                          placeholder="Min. 6 characters"
+                          autoFocus
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowNewPassword((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-brand transition"
+                          aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showNewPassword ? (
+                            <EyeOffIcon className="h-4 w-4" />
+                          ) : (
+                            <EyeIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                     <div>
                       <label className="mb-1.5 block text-sm font-semibold text-gray-700">Confirm Password</label>
-                      <input
-                        type="password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                        onKeyDown={(e) => { if (e.key === 'Enter') handleResetPassword() }}
-                        className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm placeholder-gray-400 transition focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
-                        placeholder="Re-enter new password"
-                      />
+                      <div className="relative">
+                        <input
+                          type={showConfirmPassword ? 'text' : 'password'}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleResetPassword() }}
+                          className="w-full rounded-xl border border-gray-200 bg-white px-4 py-3 pr-11 text-sm placeholder-gray-400 transition focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20"
+                          placeholder="Re-enter new password"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowConfirmPassword((v) => !v)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 hover:text-brand transition"
+                          aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                        >
+                          {showConfirmPassword ? (
+                            <EyeOffIcon className="h-4 w-4" />
+                          ) : (
+                            <EyeIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
                     </div>
                     {resetError && (
                       <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-medium text-red-700">{resetError}</p>

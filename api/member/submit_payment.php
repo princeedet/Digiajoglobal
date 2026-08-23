@@ -32,9 +32,16 @@ $scope        = 'weekly';
 $db = getDB();
 
 try {
-    // Look up the user
-    $stmt = $db->prepare('SELECT id, name, email FROM users WHERE member_id = ? LIMIT 1');
-    $stmt->execute([$memberId]);
+    // Look up the user by member_id, numeric id, or email
+    $cleanId = is_numeric($memberId) ? (int)$memberId : (int)preg_replace('/\D/', '', $memberId);
+    $stmt = $db->prepare('
+        SELECT id, name, email FROM users 
+        WHERE (member_id = ? AND member_id != "") 
+           OR (id = ? AND ? > 0) 
+           OR (email = ? AND email != "") 
+        LIMIT 1
+    ');
+    $stmt->execute([$memberId, $cleanId, $cleanId, $memberId]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user) {
@@ -89,6 +96,24 @@ try {
     $rateNote   = $weeksCovered > 1
         ? "This covers {$weeksLabel} — ₦" . number_format(1300 * $hands / $weeksCovered, 2) . " per week spread across {$weeksLabel} once approved."
         : "This covers 1 weekly slot.";
+
+    // ── Insert In-App Notification for Member ────────────────────────────────
+    try {
+        $notifTitle = "Savings Payment Submitted";
+        $notifBody = "Your contribution of ₦" . number_format($amount, 2) . " ({$handsLabel}, {$weeksLabel}, Ref: {$reference}) has been received and is pending admin verification.";
+        insert_notification($db, [
+            'user_id'     => $user['id'],
+            'member_id'   => $memberId,
+            'target_user' => $user['id'],
+            'audience'    => 'specific_user',
+            'title'       => $notifTitle,
+            'body'        => $notifBody,
+            'message'     => $notifBody,
+            'kind'        => 'info',
+            'type'        => 'info',
+            'sent_at'     => date('Y-m-d H:i:s'),
+        ]);
+    } catch (Exception $e) {}
 
     $subjectUser = "Payment Submission Received — Pending Confirmation";
     $msgUser = "<p>Hi {$user['name']},</p>

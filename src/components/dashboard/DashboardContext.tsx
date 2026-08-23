@@ -84,7 +84,13 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
       if (paymentsRes.ok) {
         const paymentsData = await paymentsRes.json()
         if (paymentsData.success && Array.isArray(paymentsData.payments)) {
-          loadedPayments = paymentsData.payments
+          const seen = new Set<string>()
+          loadedPayments = paymentsData.payments.filter((p: Payment) => {
+            const key = p.id || p.reference
+            if (!key || seen.has(key)) return false
+            seen.add(key)
+            return true
+          })
           setPayments(loadedPayments)
           savePayments(loadedPayments)
         }
@@ -94,7 +100,16 @@ export function DashboardProvider({ children }: { children: React.ReactNode }) {
         const statsData = await statsRes.json()
         if (statsData.success && statsData.stats) {
           setStats(statsData.stats)
-          if (statsData.recentPayments) setRecentPayments(statsData.recentPayments)
+          if (statsData.recentPayments && Array.isArray(statsData.recentPayments)) {
+            const seen = new Set<string>()
+            const dedupedRecent = statsData.recentPayments.filter((p: Payment) => {
+              const key = p.id || p.reference
+              if (!key || seen.has(key)) return false
+              seen.add(key)
+              return true
+            })
+            setRecentPayments(dedupedRecent)
+          }
         }
       }
     } catch (e) {

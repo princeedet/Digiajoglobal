@@ -19,6 +19,7 @@ import { StatusBadge } from '../../components/dashboard/StatusBadge'
 import { NAIRA } from '../../lib/brand'
 import { getCurrentUser, getStoredPayments, savePayments } from '../../lib/persistence'
 import { apiFetch, apiUrl } from '../../lib/api'
+import { useDashboard } from '../../components/dashboard/DashboardContext'
 
 interface Payment {
   id: string
@@ -55,6 +56,7 @@ export function PaymentHistory() {
     { planId: 1, handName: 'Hand 1', weeklyAmount: 1300 },
   ])
 
+  const { notify } = useDashboard()
   const currentUser = getCurrentUser()
   const memberId = currentUser?.id || ''
   const isDoubleUp = currentUser?.plan !== 'DigiMart'
@@ -191,8 +193,10 @@ export function PaymentHistory() {
         setSubmitSuccess(data.message || 'Payment submitted successfully!')
         setBankRef('')
         fetchPayments()
-        // Broadcast real-time refresh to all dashboard tabs
+        notify(`Savings payment of ₦${totalAmount.toLocaleString()} submitted! Admin will verify your transfer shortly.`, 'success')
+        // Broadcast real-time refresh to all dashboard tabs & notification bell
         window.dispatchEvent(new CustomEvent('digiajo:data_updated'))
+        window.dispatchEvent(new CustomEvent('notificationMarkedRead'))
       } else {
         setSubmitError(data.error || 'Failed to submit payment.')
       }
@@ -216,7 +220,9 @@ export function PaymentHistory() {
       setPayments((prev) => [newPay, ...prev])
       setSubmitSuccess('Payment submitted successfully! Admin will verify your transfer shortly.')
       setBankRef('')
+      notify(`Savings payment of ₦${totalAmount.toLocaleString()} submitted! Admin will verify your transfer shortly.`, 'success')
       window.dispatchEvent(new CustomEvent('digiajo:data_updated'))
+      window.dispatchEvent(new CustomEvent('notificationMarkedRead'))
     } finally {
       setSubmitting(false)
     }

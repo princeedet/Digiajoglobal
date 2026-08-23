@@ -48,6 +48,21 @@ try {
     $stmt->execute([$userId, $planType]);
     $planId = $db->lastInsertId();
 
+    try {
+        insert_notification($db, [
+            'user_id'     => $userId,
+            'member_id'   => $memberId,
+            'target_user' => $userId,
+            'audience'    => 'specific_user',
+            'title'       => 'New Savings Hand Created',
+            'body'        => "You successfully added a new savings hand (Hand #{$planId}) to your account. Your weekly target contribution has been updated.",
+            'message'     => "You successfully added a new savings hand (Hand #{$planId}) to your account. Your weekly target contribution has been updated.",
+            'kind'        => 'info',
+            'type'        => 'info',
+            'sent_at'     => date('Y-m-d H:i:s')
+        ]);
+    } catch (Exception $e) {}
+
     echo json_encode([
         'success' => true,
         'message' => 'New hand created successfully!',

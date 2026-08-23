@@ -68,7 +68,6 @@ try {
                 COALESCE(p.payment_type, 'registration_fee') as payment_type
             FROM payments p
             LEFT JOIN users u ON (p.user_id IS NOT NULL AND p.user_id > 0 AND u.id = p.user_id)
-            GROUP BY p.id
             ORDER BY p.created_at DESC, p.id DESC
         ");
         $payments = $stmt->fetchAll(PDO::FETCH_ASSOC);

@@ -128,6 +128,8 @@ export function AdminDashboard() {
 
   const { payments, stats, recentPayments, approvePayment, rejectPayment, refreshData, isLoading } = useDashboard() as any
   const [refreshing, setRefreshing] = useState(false)
+  const [latestPaymentsPage, setLatestPaymentsPage] = useState(1)
+  const itemsPerPage = 5
 
   const handleRefresh = async () => {
     setRefreshing(true)
@@ -144,16 +146,24 @@ export function AdminDashboard() {
       </div>
     )
   }
+
   const pendingPayments = React.useMemo(() => {
+    const pool = [...payments, ...recentPayments]
     const seen = new Set<string>()
-    return payments.filter((p: any) => {
+    return pool.filter((p: any) => {
       if (p.status !== 'pending') return false
       const key = p.reference || p.id
       if (seen.has(key)) return false
       seen.add(key)
       return true
     })
-  }, [payments])
+  }, [payments, recentPayments])
+
+  const totalLatestPages = Math.ceil(recentPayments.length / itemsPerPage) || 1
+  const paginatedRecentPayments = React.useMemo(() => {
+    const start = (latestPaymentsPage - 1) * itemsPerPage
+    return recentPayments.slice(start, start + itemsPerPage)
+  }, [recentPayments, latestPaymentsPage])
 
   return (
     <>
@@ -328,7 +338,7 @@ export function AdminDashboard() {
                 No recent payments found.
               </div>
             ) : null}
-            {recentPayments.map((payment) => (
+            {paginatedRecentPayments.map((payment) => (
               <div
                 key={payment.id}
                 className="flex items-center justify-between gap-3 px-5 py-4"
@@ -355,6 +365,35 @@ export function AdminDashboard() {
               </div>
             ))}
           </div>
+
+          {recentPayments.length > itemsPerPage && (
+            <div className="flex items-center justify-between border-t border-gray-100 px-5 py-3.5 bg-gray-50/50 rounded-b-2xl">
+              <span className="text-xs text-gray-500">
+                Showing {((latestPaymentsPage - 1) * itemsPerPage) + 1}–{Math.min(latestPaymentsPage * itemsPerPage, recentPayments.length)} of {recentPayments.length} payments
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setLatestPaymentsPage(p => Math.max(1, p - 1))}
+                  disabled={latestPaymentsPage <= 1}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  Back
+                </button>
+                <span className="text-xs font-medium text-gray-600">
+                  Page {latestPaymentsPage} of {totalLatestPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setLatestPaymentsPage(p => Math.min(totalLatestPages, p + 1))}
+                  disabled={latestPaymentsPage >= totalLatestPages}
+                  className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </section>
         <section className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm">
           <h3 className="font-display font-bold text-brand-dark">

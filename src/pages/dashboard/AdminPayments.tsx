@@ -29,15 +29,27 @@ function TypeBadge({ type }: { type?: string }) {
 }
 
 export function AdminPayments() {
-  const { payments, approvePayment, rejectPayment } = useDashboard()
+  const { payments, recentPayments, approvePayment, rejectPayment } = useDashboard() as any
   const [filter, setFilter] = useState<
     'all' | 'pending' | 'approved' | 'rejected'
   >('all')
   const [typeFilter, setTypeFilter] = useState<'all' | string>('all')
   const [query, setQuery] = useState('')
+
+  const allPayments = useMemo(() => {
+    const pool = [...(payments || []), ...(recentPayments || [])]
+    const seen = new Set<string>()
+    return pool.filter((p: any) => {
+      const key = p.id || p.reference
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [payments, recentPayments])
+
   const visible = useMemo(
     () =>
-      payments.filter((payment: any) => {
+      allPayments.filter((payment: any) => {
         const matchesStatus = filter === 'all' || payment.status === filter
         const matchesType =
           typeFilter === 'all' ||
@@ -51,9 +63,9 @@ export function AdminPayments() {
 
         return matchesStatus && matchesType && matchesQuery
       }),
-    [payments, filter, typeFilter, query],
+    [allPayments, filter, typeFilter, query],
   )
-  const pending = payments.filter(
+  const pending = allPayments.filter(
     (payment) => payment.status === 'pending',
   ).length
   return (

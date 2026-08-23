@@ -61,7 +61,6 @@ try {
            OR (p.member_id = ? AND ? != '')
            OR (p.member_id = CONCAT('DA-', ?) AND ? > 0)
            OR (p.member_name = ? AND ? != '')
-        GROUP BY p.id
         ORDER BY p.created_at DESC, p.id DESC
     ");
     $stmt->execute([

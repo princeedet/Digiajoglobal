@@ -22,7 +22,5 @@
 Homestead.json
 Homestead.yaml
 Thumbs.db
-dist
-/dist
-*.zip
+
 

@@ -88,22 +88,8 @@ try {
 
     $userId         = (int)$user['id'];
     $actualMemberId = $user['member_id'] ?: "DA-{$userId}";
-    $userWeeks      = (int)($user['weeks'] ?? 0);
-    $userSaved      = (float)($user['saved'] ?? 0);
     $userStartDate  = !empty($user['created_at']) ? $user['created_at'] : date('Y-m-d H:i:s');
     $weeklyRate     = 1300.00;
-
-    // Check savings_plans table for latest saved amount & weeks
-    try {
-        $spStmt = $db->prepare('SELECT plan_type, total_saved, weeks_completed, start_date FROM savings_plans WHERE user_id = ? ORDER BY created_at DESC LIMIT 1');
-        $spStmt->execute([$userId]);
-        $sp = $spStmt->fetch(PDO::FETCH_ASSOC);
-        if ($sp) {
-            $userWeeks = max($userWeeks, (int)($sp['weeks_completed'] ?? 0));
-            $userSaved = max($userSaved, (float)($sp['total_saved'] ?? 0));
-            if (!empty($sp['start_date'])) $userStartDate = $sp['start_date'];
-        }
-    } catch (PDOException $e) {}
 
     // 2. Fetch all payments for this user (approved & pending, excluding pure registration fees)
     $payStmt = $db->prepare("
@@ -112,19 +98,20 @@ try {
                COALESCE(payment_scope, 'weekly')     AS payment_scope,
                COALESCE(NULLIF(weeks_covered, 0), 1) AS weeks_covered
         FROM payments
-        WHERE (user_id = ? OR member_id = ? OR member_id = ? OR member_name = ?)
-          AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
+        WHERE ((user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?))
+          AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
           AND (purpose IS NULL OR (
               LOWER(purpose) NOT LIKE '%registration%' 
               AND LOWER(purpose) NOT LIKE '%reg fee%' 
               AND LOWER(purpose) NOT LIKE '%one-time%'
               AND LOWER(purpose) NOT LIKE '%fine%'
+              AND LOWER(purpose) NOT LIKE '%digimart%'
           ))
           AND amount != 2000
           AND status IN ('approved', 'confirmed', 'success', 'pending')
         ORDER BY id ASC, created_at ASC
     ");
-    $payStmt->execute([$userId, $actualMemberId, $userParam, $user['name']]);
+    $payStmt->execute([$userId, $actualMemberId]);
     $allPayments = $payStmt->fetchAll(PDO::FETCH_ASSOC);
 
     // 3. Fetch fines for this user
@@ -258,9 +245,9 @@ try {
 
     // Calculate total saved and completed weeks
     $approvedWeeks = array_filter($weeks, fn($w) => $w['status'] === 'approved');
-    $effectiveCompletedWeeks = max(count($approvedWeeks), $userWeeks);
+    $effectiveCompletedWeeks = count($approvedWeeks);
     $approvedSaved = array_sum(array_map(fn($w) => (float)$w['amount'], $approvedWeeks));
-    $finalTotalSaved = max($approvedSaved, $userSaved);
+    $finalTotalSaved = $approvedSaved;
 
     // Latest active weekly rate based on hands
     $latestHands = 1;

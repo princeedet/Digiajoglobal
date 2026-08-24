@@ -57,8 +57,8 @@ try {
             SELECT 
                 p.id as _dbId,
                 COALESCE(NULLIF(p.payment_ref, ''), CONCAT('PAY-', p.id)) as id,
-                COALESCE(p.member_name, u.name, 'Member') as member,
-                COALESCE(p.member_id, u.member_id, CONCAT('DA-', p.user_id)) as memberId,
+                COALESCE(NULLIF(p.member_name, ''), u.name, 'Member') as member,
+                COALESCE(NULLIF(p.member_id, ''), u.member_id, CONCAT('DA-', p.user_id)) as memberId,
                 p.amount,
                 DATE_FORMAT(COALESCE(p.created_at, NOW()), '%d %b %Y, %h:%i %p') as date,
                 COALESCE(NULLIF(p.payment_ref, ''), CONCAT('PAY-', p.id)) as reference,
@@ -166,14 +166,14 @@ try {
 
         // Resolve user accurately
         $targetUser = null;
-        if ($userId > 0) {
-            $uStmt = $db->prepare('SELECT id, member_id, name, email FROM users WHERE id = ? LIMIT 1');
-            $uStmt->execute([$userId]);
+        if (!empty($memberId)) {
+            $uStmt = $db->prepare('SELECT id, member_id, name, email FROM users WHERE member_id = ? LIMIT 1');
+            $uStmt->execute([$memberId]);
             $targetUser = $uStmt->fetch(PDO::FETCH_ASSOC);
         }
-        if (!$targetUser && !empty($memberId)) {
-            $uStmt = $db->prepare('SELECT id, member_id, name, email FROM users WHERE member_id = ? OR referral_code = ? LIMIT 1');
-            $uStmt->execute([$memberId, $memberId]);
+        if (!$targetUser && $userId > 0) {
+            $uStmt = $db->prepare('SELECT id, member_id, name, email FROM users WHERE id = ? LIMIT 1');
+            $uStmt->execute([$userId]);
             $targetUser = $uStmt->fetch(PDO::FETCH_ASSOC);
         }
         if (!$targetUser && !empty($memberName)) {
@@ -203,27 +203,13 @@ try {
             } catch (Exception $e) {}
 
             if ($status === 'approved') {
-                // 2. Activate user account in users table
+                // 2. Activate user account in users table (only the resolved user)
                 if ($userId > 0) {
                     $db->prepare("
                         UPDATE users 
                         SET status = 'active', registration_fee_paid = 1 
                         WHERE id = ?
                     ")->execute([$userId]);
-                }
-                if (!empty($memberId)) {
-                    $db->prepare("
-                        UPDATE users 
-                        SET status = 'active', registration_fee_paid = 1 
-                        WHERE member_id = ?
-                    ")->execute([$memberId]);
-                }
-                if (!empty($memberName)) {
-                    $db->prepare("
-                        UPDATE users 
-                        SET status = 'active', registration_fee_paid = 1 
-                        WHERE name = ?
-                    ")->execute([$memberName]);
                 }
 
                 // 3. Auto-clear any duplicate pending registration payments for this member

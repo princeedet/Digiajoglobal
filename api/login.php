@@ -152,7 +152,16 @@ if (!$passwordOk) {
     exit;
 }
 
-// ─── Status Checks & Auto-Healing ───────────────────────────────────────────
+// ─── Status Checks ───────────────────────────────────────────────────────────
+if ($user['status'] === 'suspended') {
+    http_response_code(403);
+    echo json_encode([
+        'success' => false,
+        'error'   => 'Your account has been suspended. You cannot log in at this time. Please contact support.',
+    ]);
+    exit;
+}
+
 if ($user['status'] === 'pending_verification') {
     // Check if user has an approved payment in payments table
     try {
@@ -183,49 +192,15 @@ if ($user['status'] === 'pending_verification') {
     }
 }
 
-$userDbSavedCheck = (float)($user['saved'] ?? 0);
-$userDbWeeksCheck = (int)($user['weeks'] ?? 0);
-
-if ($user['status'] === 'suspended' && $userDbSavedCheck <= 0 && $userDbWeeksCheck <= 0) {
-    try {
-        $db->prepare("UPDATE users SET status = 'active' WHERE id = ? AND (saved = 0 OR saved IS NULL)")->execute([$user['id']]);
-        $user['status'] = 'active';
-    } catch (Exception $e) {}
-}
-
-if ($user['status'] === 'suspended') {
-    http_response_code(403);
-    echo json_encode([
-        'success' => false,
-        'error'   => 'Your account has been suspended. Please contact administrator support.',
-    ]);
-    exit;
-}
-
 // ─── Fetch Savings Data ───────────────────────────────────────────────────────
 $userId = (int)$user['id'];
 $officialMemberId = $user['member_id'] ?: ('DA-' . $userId);
 
-$userDbSaved = (float)($user['saved'] ?? 0);
-$userDbWeeks = (int)($user['weeks'] ?? 0);
-$spSaved     = 0.0;
-$spWeeks     = 0;
 $calcSaved   = 0.0;
 $calcWeeks   = 0;
 $activeHands = 1;
 
-// 1. Check savings_plans table
-try {
-    $spStmt = $db->prepare('SELECT plan_type, total_saved, weeks_completed, start_date FROM savings_plans WHERE user_id = ? ORDER BY created_at DESC LIMIT 1');
-    $spStmt->execute([$userId]);
-    $sp = $spStmt->fetch(PDO::FETCH_ASSOC);
-    if ($sp) {
-        $spSaved = (float)($sp['total_saved'] ?? 0);
-        $spWeeks = (int)($sp['weeks_completed'] ?? 0);
-    }
-} catch (PDOException $e) {}
-
-// 2. Calculate from approved payments
+// Calculate strictly from user's approved weekly payments
 try {
     $payStmt = $db->prepare("
         SELECT 
@@ -234,18 +209,21 @@ try {
             COALESCE(SUM(amount), 0) as calc_saved,
             MAX(COALESCE(NULLIF(hands, 0), ROUND(amount / 1300), 1)) as calc_hands
         FROM payments
-        WHERE (user_id = ? OR member_id = ? OR member_name = ?) 
+        WHERE ((user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?)) 
           AND status IN ('approved', 'confirmed', 'success')
-          AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
-          AND (purpose IS NULL OR (
-              LOWER(purpose) NOT LIKE '%registration%' 
-              AND LOWER(purpose) NOT LIKE '%reg fee%' 
-              AND LOWER(purpose) NOT LIKE '%one-time%'
-              AND LOWER(purpose) NOT LIKE '%fine%'
-          ))
           AND amount != 2000
+          AND (payment_scope = 'weekly' OR (
+              (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
+              AND (purpose IS NULL OR (
+                  LOWER(purpose) NOT LIKE '%registration%' 
+                  AND LOWER(purpose) NOT LIKE '%reg fee%' 
+                  AND LOWER(purpose) NOT LIKE '%one-time%'
+                  AND LOWER(purpose) NOT LIKE '%fine%'
+                  AND LOWER(purpose) NOT LIKE '%digimart%'
+              ))
+          ))
     ");
-    $payStmt->execute([$userId, $officialMemberId, $user['name']]);
+    $payStmt->execute([$userId, $officialMemberId]);
     $calc = $payStmt->fetch(PDO::FETCH_ASSOC);
 
     $calcWeeks = (int)($calc['calc_weeks'] ?? 0);
@@ -254,18 +232,22 @@ try {
 
     $lastPayStmt = $db->prepare("
         SELECT hands, amount FROM payments 
-        WHERE (user_id = ? OR member_id = ? OR member_name = ?)
-          AND (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
-          AND (purpose IS NULL OR (
-              LOWER(purpose) NOT LIKE '%registration%' 
-              AND LOWER(purpose) NOT LIKE '%reg fee%' 
-              AND LOWER(purpose) NOT LIKE '%one-time%'
-              AND LOWER(purpose) NOT LIKE '%fine%'
-          ))
+        WHERE ((user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?))
+          AND status IN ('approved', 'confirmed', 'success')
           AND amount != 2000
+          AND (payment_scope = 'weekly' OR (
+              (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
+              AND (purpose IS NULL OR (
+                  LOWER(purpose) NOT LIKE '%registration%' 
+                  AND LOWER(purpose) NOT LIKE '%reg fee%' 
+                  AND LOWER(purpose) NOT LIKE '%one-time%'
+                  AND LOWER(purpose) NOT LIKE '%fine%'
+                  AND LOWER(purpose) NOT LIKE '%digimart%'
+              ))
+          ))
         ORDER BY id DESC LIMIT 1
     ");
-    $lastPayStmt->execute([$userId, $officialMemberId, $user['name']]);
+    $lastPayStmt->execute([$userId, $officialMemberId]);
     $lastPay = $lastPayStmt->fetch(PDO::FETCH_ASSOC);
     if ($lastPay) {
         $amt = (float)$lastPay['amount'];
@@ -279,8 +261,8 @@ try {
     }
 } catch (PDOException $e) { /* non-fatal */ }
 
-$saved = max($calcSaved, $userDbSaved, $spSaved);
-$weeks = max($calcWeeks, $userDbWeeks, $spWeeks);
+$saved = $calcSaved;
+$weeks = $calcWeeks;
 
 if ($weeks === 0 && $saved > 0 && $activeHands > 0) {
     $weeks = max(1, (int)round($saved / ($activeHands * 1300)));

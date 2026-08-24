@@ -102,42 +102,40 @@ try {
                         NULLIF(u.plan_type, ''),
                         'Double Up'
                     ) as plan,
-                    GREATEST(
-                        COALESCE(u.saved, 0),
-                        COALESCE((SELECT total_saved FROM savings_plans WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1), 0),
-                        COALESCE((
-                            SELECT SUM(p.amount) FROM payments p
-                            WHERE (p.user_id = u.id OR p.member_id = u.member_id OR p.member_id = CONCAT('DA-', u.id) OR p.member_name = u.name)
-                              AND p.status IN ('approved', 'confirmed', 'success')
-                              AND p.amount != 2000
-                              AND (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
+                    COALESCE((
+                        SELECT SUM(p.amount) FROM payments p
+                        WHERE ((p.user_id = u.id) OR (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u.member_id))
+                          AND p.status IN ('approved', 'confirmed', 'success')
+                          AND p.amount != 2000
+                          AND (p.payment_scope = 'weekly' OR (
+                              (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
                               AND (p.purpose IS NULL OR (
                                   LOWER(p.purpose) NOT LIKE '%registration%' 
                                   AND LOWER(p.purpose) NOT LIKE '%reg fee%' 
                                   AND LOWER(p.purpose) NOT LIKE '%one-time%'
                                   AND LOWER(p.purpose) NOT LIKE '%fine%'
+                                  AND LOWER(p.purpose) NOT LIKE '%digimart%'
                               ))
-                        ), 0)
-                    ) as saved,
-                    GREATEST(
-                        COALESCE(u.weeks, 0),
-                        COALESCE((SELECT weeks_completed FROM savings_plans WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1), 0),
-                        COALESCE((
-                            SELECT SUM(COALESCE(p.weeks_covered, 1)) FROM payments p
-                            WHERE (p.user_id = u.id OR p.member_id = u.member_id OR p.member_id = CONCAT('DA-', u.id) OR p.member_name = u.name)
-                              AND p.status IN ('approved', 'confirmed', 'success')
-                              AND p.amount != 2000
-                              AND (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine'))
+                          ))
+                    ), 0) as saved,
+                    COALESCE((
+                        SELECT SUM(COALESCE(p.weeks_covered, 1)) FROM payments p
+                        WHERE ((p.user_id = u.id) OR (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u.member_id))
+                          AND p.status IN ('approved', 'confirmed', 'success')
+                          AND p.amount != 2000
+                          AND (p.payment_scope = 'weekly' OR (
+                              (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
                               AND (p.purpose IS NULL OR (
                                   LOWER(p.purpose) NOT LIKE '%registration%' 
                                   AND LOWER(p.purpose) NOT LIKE '%reg fee%' 
                                   AND LOWER(p.purpose) NOT LIKE '%one-time%'
                                   AND LOWER(p.purpose) NOT LIKE '%fine%'
+                                  AND LOWER(p.purpose) NOT LIKE '%digimart%'
                               ))
-                        ), 0)
-                    ) as weeks,
-                    (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id = u.id OR r.referrer_id = u.member_id) as referral_count,
-                    (SELECT COUNT(*) FROM referrals r WHERE (r.referrer_id = u.id OR r.referrer_id = u.member_id) AND r.status = 'active') as active_referrals,
+                          ))
+                    ), 0) as weeks,
+                    (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id = u.id OR (u.member_id IS NOT NULL AND u.member_id != '' AND r.referrer_id = u.member_id)) as referral_count,
+                    (SELECT COUNT(*) FROM referrals r WHERE (r.referrer_id = u.id OR (u.member_id IS NOT NULL AND u.member_id != '' AND r.referrer_id = u.member_id)) AND r.status = 'active') as active_referrals,
                     (SELECT bank_name FROM bank_accounts WHERE user_id = u.id AND is_primary = 1 LIMIT 1) as bank_name,
                     (SELECT account_number FROM bank_accounts WHERE user_id = u.id AND is_primary = 1 LIMIT 1) as account_number,
                     (SELECT account_name FROM bank_accounts WHERE user_id = u.id AND is_primary = 1 LIMIT 1) as account_name
@@ -156,8 +154,8 @@ try {
                     COALESCE(NULLIF(u.initials, ''), UPPER(SUBSTRING(u.name, 1, 2)), 'U') as initials,
                     DATE_FORMAT(COALESCE(u.created_at, NOW()), '%d %b %Y') as joined,
                     COALESCE(u.status, 'active') as status,
-                    COALESCE(u.saved, 0) as saved,
-                    COALESCE(u.weeks, 0) as weeks
+                    0 as saved,
+                    0 as weeks
                 FROM users u
                 ORDER BY u.id DESC
             ");
@@ -183,14 +181,6 @@ try {
             if ($m['weeks'] <= 0 && $m['saved'] <= 0) {
                 $elapsed = 0;
                 $missed = 0;
-                // If member was mistakenly auto-suspended with 0 savings, restore active status
-                if ($m['status'] === 'suspended') {
-                    $m['status'] = 'active';
-                    try {
-                        $cleanId = preg_replace('/\D/', '', $m['id']);
-                        $db->prepare("UPDATE users SET status = 'active' WHERE (member_id = ? OR id = ?) AND (saved = 0 OR saved IS NULL)")->execute([$m['id'], $cleanId]);
-                    } catch (Exception $e) {}
-                }
             } else {
                 $elapsed = max(1, min(50, (int)ceil(max(0, time() - $joinedTime) / (7 * 86400))));
                 $missed = max(0, $elapsed - $m['weeks']);
@@ -241,11 +231,11 @@ try {
         $userId = (int)$user['id'];
         $memberId = $user['member_id'] ?: ('DA-' . $userId);
 
-        $db->prepare("UPDATE users SET status = ?, registration_fee_paid = ? WHERE id = ?")->execute([
-            $status,
-            $status === 'active' ? 1 : 0,
-            $userId
-        ]);
+        if ($status === 'active') {
+            $db->prepare("UPDATE users SET status = 'active', registration_fee_paid = 1 WHERE id = ?")->execute([$userId]);
+        } else {
+            $db->prepare("UPDATE users SET status = ? WHERE id = ?")->execute([$status, $userId]);
+        }
 
         if ($status === 'active') {
             // Auto-approve pending registration payments

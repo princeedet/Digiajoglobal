@@ -46,6 +46,8 @@ CREATE TABLE IF NOT EXISTS `users` (
   `registration_fee_paid` TINYINT(1)   NOT NULL DEFAULT 0,
   `created_at`            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `updated_at`            DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  KEY `idx_users_phone` (`phone`),
+  KEY `idx_users_name` (`name`),
   CONSTRAINT `fk_users_referrer` FOREIGN KEY (`referred_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 

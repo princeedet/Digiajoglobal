@@ -40,17 +40,22 @@ $paymentMethod  = $body['paymentMethod'];  // 'bank' | 'paystack' | 'flutterwave
 $bankRef        = trim($body['bankRef'] ?? '');
 $referredByCode = trim($body['ref'] ?? '');
 
-// ─── Validate Plan ─────────────────────────────────────────────────────────────
-$planMap = [
-    'double-up' => ['label' => 'Double Up', 'fee' => 2000,   'purpose' => 'Double Up Registration',  'paymentType' => 'registration_fee'],
-    'digimart'  => ['label' => 'DigiMart',  'fee' => 100000, 'purpose' => 'DigiMart Unit Registration', 'paymentType' => 'digimart_unit'],
-];
-if (!isset($planMap[$plan])) {
-    http_response_code(422);
-    echo json_encode(['success' => false, 'error' => 'Invalid plan selected']);
-    exit;
+// ─── Validate Plan (only required if not just validating personal details) ─────
+$isValidationOnly = isset($_GET['validate_only']) || !empty($body['validate_only']) || ($body['action'] ?? '') === 'validate';
+
+$planInfo = null;
+if (!$isValidationOnly) {
+    $planMap = [
+        'double-up' => ['label' => 'Double Up', 'fee' => 2000,   'purpose' => 'Double Up Registration',  'paymentType' => 'registration_fee'],
+        'digimart'  => ['label' => 'DigiMart',  'fee' => 100000, 'purpose' => 'DigiMart Unit Registration', 'paymentType' => 'digimart_unit'],
+    ];
+    if (!isset($planMap[$plan])) {
+        http_response_code(422);
+        echo json_encode(['success' => false, 'error' => 'Invalid plan selected']);
+        exit;
+    }
+    $planInfo = $planMap[$plan];
 }
-$planInfo = $planMap[$plan];
 
 try {
     $db = getDB();
@@ -146,173 +151,78 @@ try {
         $db->exec("ALTER TABLE payments MODIFY COLUMN payment_type VARCHAR(100) DEFAULT 'registration_fee'");
     } catch (Exception $e) {}
 
-    // ─── Check Duplicate Email ──────────────────────────────────────────────────
-    $check = $db->prepare('SELECT id, member_id, status, registration_fee_paid FROM users WHERE LOWER(email) = LOWER(?) LIMIT 1');
-    $check->execute([$email]);
-    $existingUser = $check->fetch(PDO::FETCH_ASSOC);
+    // ─── STRICT DUPLICATE CHECKS (Name, Email, Phone) ───────────────────────────
+    $cleanName    = preg_replace('/\s+/', ' ', trim($name));
+    $cleanEmail   = strtolower(trim($email));
+    $cleanDigits  = preg_replace('/\D/', '', $phone);
+    $phone10      = strlen($cleanDigits) >= 10 ? substr($cleanDigits, -10) : $cleanDigits;
 
-    if ($existingUser) {
-        // If active/verified, prevent duplicate registration
-        if ($existingUser['status'] === 'active' || (int)$existingUser['registration_fee_paid'] === 1) {
-            http_response_code(409);
-            echo json_encode([
-                'success' => false,
-                'error' => 'This email address is already registered on DigiAjo. Please use a new email address or log in.'
-            ]);
-            exit;
-        }
+    $fieldErrors = [];
+    $conflictItems = [];
 
-        // Unverified user retrying / submitting payment transfer
-        $dbUserId = (int)$existingUser['id'];
-        $memberId = $existingUser['member_id'] ?: ('DA-' . str_pad((string)$dbUserId, 5, '0', STR_PAD_LEFT));
+    // 1. Check Duplicate Email
+    $checkEmail = $db->prepare('SELECT id, member_id, name, email, phone, status, registration_fee_paid FROM users WHERE LOWER(TRIM(email)) = LOWER(?) LIMIT 1');
+    $checkEmail->execute([$cleanEmail]);
+    $existingEmailUser = $checkEmail->fetch(PDO::FETCH_ASSOC);
 
-        if ($paymentMethod === 'bank') {
-            if (strlen($bankRef) > 40) {
-                $bankRef = substr($bankRef, 0, 40);
-            }
-            $txRef         = $bankRef ?: sprintf('DGA/%s%s/%s', date('n'), date('j'), substr($memberId, -3));
-            $channel       = 'bank_transfer';
-            $paymentStatus = 'pending';
-            $userStatus    = 'pending_verification';
-        } else {
-            $gatewayLabel  = strtoupper($paymentMethod);
-            $txRef         = $gatewayLabel . '_' . random_int(100000000, 999999999);
-            $channel       = 'card';
-            $paymentStatus = 'approved';
-            $userStatus    = 'active';
-        }
+    if ($existingEmailUser) {
+        $fieldErrors['email'] = 'This email address is already registered on DigiAjo. Please use a different email or log in.';
+        $conflictItems[] = 'email address';
+    }
 
-        $cleanPhone  = preg_replace('/\D/', '', $phone);
-        $defaultPass = substr($cleanPhone, -6);
-        $passHash    = password_hash($defaultPass, PASSWORD_BCRYPT);
-        $parts       = preg_split('/\s+/', trim($name));
-        $initials    = strtoupper(implode('', array_map(fn($p) => $p[0] ?? '', array_slice($parts, 0, 2))));
+    // 2. Check Duplicate Phone Number (multi-format candidate check)
+    $phoneCandidates = array_values(array_unique(array_filter([
+        $phone,
+        $cleanDigits,
+        '0' . $phone10,
+        '234' . $phone10,
+        '+234' . $phone10,
+        '+234 ' . substr($phone10, 0, 3) . ' ' . substr($phone10, 3, 3) . ' ' . substr($phone10, 6)
+    ])));
 
-        $db->prepare("
-            UPDATE users 
-            SET name = ?, initials = ?, phone = ?, password_hash = ?, plan_type = ?, registration_fee = ?, status = ?
-            WHERE id = ?
-        ")->execute([$name, $initials, $phone, $passHash, $planInfo['label'], $planInfo['fee'], $userStatus, $dbUserId]);
+    $phonePlaceholders = implode(',', array_fill(0, count($phoneCandidates), '?'));
+    $checkPhone = $db->prepare("SELECT id, member_id, name, email, phone, status FROM users WHERE phone IN ($phonePlaceholders) LIMIT 1");
+    $checkPhone->execute($phoneCandidates);
+    $existingPhoneUser = $checkPhone->fetch(PDO::FETCH_ASSOC);
 
-        // Insert or update pending payment
-        $payCheck = $db->prepare("SELECT id FROM payments WHERE user_id = ? AND status = 'pending' LIMIT 1");
-        $payCheck->execute([$dbUserId]);
-        $existingPay = $payCheck->fetch();
+    if (!$existingPhoneUser && strlen($phone10) >= 7) {
+        $checkPhoneLike = $db->prepare("SELECT id, member_id, name, email, phone, status FROM users WHERE phone LIKE ? LIMIT 1");
+        $checkPhoneLike->execute(['%' . $phone10]);
+        $existingPhoneUser = $checkPhoneLike->fetch(PDO::FETCH_ASSOC);
+    }
 
-        if ($existingPay) {
-            $db->prepare("
-                UPDATE payments 
-                SET payment_ref = ?, member_name = ?, amount = ?, channel = ?, payment_type = ?, purpose = ?
-                WHERE id = ?
-            ")->execute([$txRef, $name, $planInfo['fee'], $channel, $planInfo['paymentType'], $planInfo['purpose'], $existingPay['id']]);
-            $payRef = $txRef;
-        } else {
-            $payRef = 'PAY-' . str_pad((string)random_int(1000, 9999), 4, '0', STR_PAD_LEFT);
-            $db->prepare("
-                INSERT INTO payments
-                    (payment_ref, user_id, member_id, member_name, amount, channel,
-                     payment_type, status, payment_status, purpose, hands, weeks_covered, payment_scope)
-                VALUES
-                    (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 'registration')
-            ")->execute([
-                $txRef,
-                $dbUserId,
-                $memberId,
-                $name,
-                $planInfo['fee'],
-                $channel,
-                $planInfo['paymentType'],
-                $paymentStatus,
-                $paymentStatus,
-                $planInfo['purpose'],
-            ]);
-        }
+    if ($existingPhoneUser) {
+        $fieldErrors['phone'] = 'This phone number is already registered on DigiAjo. Please use a different phone number or log in.';
+        $conflictItems[] = 'phone number';
+    }
 
-        // Insert notification for user, referrer, and admin
-        try {
-            insert_notification($db, [
-                'user_id'     => $dbUserId,
-                'member_id'   => $memberId,
-                'target_user' => $dbUserId,
-                'audience'    => 'specific_user',
-                'title'       => 'Welcome to DigiAjo Global',
-                'body'        => "Welcome to DigiAjo Global! Your account was registered for {$planInfo['label']}. Your registration fee of ₦" . number_format($planInfo['fee'], 2) . " (Ref: {$txRef}) is pending admin verification.",
-                'message'     => "Welcome to DigiAjo Global! Your account was registered for {$planInfo['label']}. Your registration fee of ₦" . number_format($planInfo['fee'], 2) . " (Ref: {$txRef}) is pending admin verification.",
-                'kind'        => 'info',
-                'type'        => 'info',
-                'sent_at'     => date('Y-m-d H:i:s')
-            ]);
+    // 3. Check Duplicate Full Name
+    $checkName = $db->prepare('SELECT id, member_id, name, email, phone, status FROM users WHERE LOWER(TRIM(name)) = LOWER(?) LIMIT 1');
+    $checkName->execute([$cleanName]);
+    $existingNameUser = $checkName->fetch(PDO::FETCH_ASSOC);
 
-            if (!empty($referredBy)) {
-                insert_notification($db, [
-                    'user_id'     => $referredBy,
-                    'target_user' => $referredBy,
-                    'audience'    => 'specific_user',
-                    'title'       => '🎉 New Referral Joined!',
-                    'body'        => "{$name} just registered using your referral link.",
-                    'message'     => "{$name} just registered using your referral link.",
-                    'kind'        => 'referral',
-                    'type'        => 'referral',
-                    'sent_at'     => date('Y-m-d H:i:s')
-                ]);
-            }
+    if ($existingNameUser) {
+        $fieldErrors['name'] = "An account with the full name '{$name}' is already registered. If you already have an account, please log in.";
+        $conflictItems[] = 'full name';
+    }
 
-            insert_notification($db, [
-                'audience'    => 'admin',
-                'title'       => 'New Member Registration',
-                'body'        => "{$name} ({$memberId}) registered for {$planInfo['label']}.",
-                'message'     => "{$name} ({$memberId}) registered for {$planInfo['label']}.",
-                'kind'        => 'update',
-                'type'        => 'update',
-                'sent_at'     => date('Y-m-d H:i:s')
-            ]);
-        } catch (Exception $e) {}
-
-        // Send registration emails
-        try {
-            $subjectUser = "Welcome to DigiAjo Global — Registration Received ({$memberId})";
-            $msgUser = "
-                <p>Dear <strong>{$name}</strong>,</p>
-                <p>Thank you for registering on <strong>DigiAjo Global</strong> for the <strong>{$planInfo['label']}</strong>.</p>
-                <table style='width:100%; border-collapse:collapse; margin:20px 0;'>
-                    <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Member ID:</td><td style='padding:8px 0; font-weight:bold;'>{$memberId}</td></tr>
-                    <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Payment Reference:</td><td style='padding:8px 0; font-weight:bold; color:#164f29;'>{$txRef}</td></tr>
-                    <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Registration Fee:</td><td style='padding:8px 0; font-weight:bold;'>₦" . number_format($planInfo['fee'], 2) . "</td></tr>
-                    <tr style='border-bottom:1px solid #eee;'><td style='padding:8px 0; color:#666;'>Status:</td><td style='padding:8px 0; font-weight:bold;'>" . ($paymentStatus === 'approved' ? 'Active' : 'Pending Admin Verification') . "</td></tr>
-                </table>
-                <p>" . ($paymentStatus === 'approved' 
-                    ? "Your payment is confirmed and your account is active! You can sign in immediately using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number)." 
-                    : "Our administrators will review and confirm your bank transfer. Once confirmed, you can log in to your dashboard using your email (<strong>{$email}</strong>) and your default password (the last 6 digits of your phone number: <strong>{$defaultPass}</strong>).") . "</p>
-                <p><a href='https://digiajoglobal.com/login' style='display:inline-block; background-color:#164f29; color:#ffffff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;'>Sign In to Member Portal</a></p>
-            ";
-            send_email($email, $subjectUser, $msgUser);
-
-            $subjectAdmin = "Registration Transfer Submitted — {$name} ({$memberId})";
-            $msgAdmin = "
-                <p>A member registration transfer has been submitted on DigiAjo Global:</p>
-                <ul>
-                    <li><strong>Name:</strong> {$name}</li>
-                    <li><strong>Member ID:</strong> {$memberId}</li>
-                    <li><strong>Email:</strong> {$email}</li>
-                    <li><strong>Phone:</strong> {$phone}</li>
-                    <li><strong>Plan:</strong> {$planInfo['label']}</li>
-                    <li><strong>Payment Ref:</strong> {$txRef}</li>
-                    <li><strong>Amount:</strong> ₦" . number_format($planInfo['fee'], 2) . "</li>
-                    <li><strong>Channel:</strong> {$channel}</li>
-                </ul>
-                <p>Please review and approve in the <a href='https://digiajoglobal.com/admin/payments'>Admin Portal</a>.</p>
-            ";
-            send_email('admin@digiajoglobal.com', $subjectAdmin, $msgAdmin);
-        } catch (Exception $e) {}
-
+    // If any duplicates exist, block registration with HTTP 409 Conflict
+    if (!empty($fieldErrors)) {
+        http_response_code(409);
+        $summaryText = 'The provided ' . implode(', ', $conflictItems) . ' is already registered on DigiAjo. You cannot register with the same details more than once. Please log in or use unique details.';
         echo json_encode([
-            'success'       => true,
-            'userId'        => $memberId,
-            'paymentId'     => $payRef,
-            'reference'     => $txRef,
-            'status'        => $userStatus,
-            'paymentStatus' => $paymentStatus,
-            'message'       => 'Registration transfer submitted! Awaiting payment confirmation from admin.',
+            'success' => false,
+            'error'   => $summaryText,
+            'fields'  => $fieldErrors,
+        ]);
+        exit;
+    }
+
+    // If request was only for pre-validation, return success immediately
+    if ($isValidationOnly) {
+        echo json_encode([
+            'success' => true,
+            'message' => 'Details are unique and valid. You may proceed to payment.',
         ]);
         exit;
     }

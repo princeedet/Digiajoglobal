@@ -41,7 +41,38 @@ try {
         // Fetch user
         $uStmt = $db->prepare("
             SELECT u.id, u.member_id, u.name, u.email, u.phone, u.created_at, u.plan_type,
-                   IFNULL((SELECT weeks_completed FROM savings_plans WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1), 0) as weeks_completed,
+                   COALESCE((
+                       SELECT SUM(p.amount) FROM payments p 
+                       WHERE ((p.user_id = u.id) OR (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u.member_id))
+                         AND p.status IN ('approved', 'confirmed', 'success')
+                         AND p.amount != 2000
+                         AND (p.payment_scope = 'weekly' OR (
+                             (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
+                             AND (p.purpose IS NULL OR (
+                                 LOWER(p.purpose) NOT LIKE '%registration%' 
+                                 AND LOWER(p.purpose) NOT LIKE '%reg fee%' 
+                                 AND LOWER(p.purpose) NOT LIKE '%one-time%'
+                                 AND LOWER(p.purpose) NOT LIKE '%fine%'
+                                 AND LOWER(p.purpose) NOT LIKE '%digimart%'
+                             ))
+                         ))
+                   ), 0) as saved,
+                   COALESCE((
+                       SELECT SUM(COALESCE(p.weeks_covered, 1)) FROM payments p 
+                       WHERE ((p.user_id = u.id) OR (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u.member_id))
+                         AND p.status IN ('approved', 'confirmed', 'success')
+                         AND p.amount != 2000
+                         AND (p.payment_scope = 'weekly' OR (
+                             (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
+                             AND (p.purpose IS NULL OR (
+                                 LOWER(p.purpose) NOT LIKE '%registration%' 
+                                 AND LOWER(p.purpose) NOT LIKE '%reg fee%' 
+                                 AND LOWER(p.purpose) NOT LIKE '%one-time%'
+                                 AND LOWER(p.purpose) NOT LIKE '%fine%'
+                                 AND LOWER(p.purpose) NOT LIKE '%digimart%'
+                             ))
+                         ))
+                   ), 0) as weeks_completed,
                    IFNULL((SELECT start_date FROM savings_plans WHERE user_id = u.id ORDER BY created_at DESC LIMIT 1), u.created_at) as plan_start_date
             FROM users u
             WHERE u.member_id = ? OR u.id = ?
@@ -66,7 +97,9 @@ try {
         $payHandsStmt = $db->prepare("
             SELECT MAX(COALESCE(NULLIF(hands, 0), ROUND(amount / 1300), 1)) as max_hands
             FROM payments
-            WHERE (user_id = ? OR member_id = ?) AND status IN ('approved', 'confirmed', 'success')
+            WHERE ((user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?)) 
+              AND status IN ('approved', 'confirmed', 'success')
+              AND amount != 2000
         ");
         $payHandsStmt->execute([$userId, $actualMemberId]);
         $handsRow = $payHandsStmt->fetch(PDO::FETCH_ASSOC);

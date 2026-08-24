@@ -83,6 +83,9 @@ export function Register() {
   const [bankRefInput, setBankRefInput] = useState('')
   const [apiError, setApiError] = useState('')
 
+  const [isValidating, setIsValidating] = useState(false)
+  const [generalError, setGeneralError] = useState('')
+
   const update = (k: string, v: string) => {
     setForm((f) => ({
       ...f,
@@ -92,19 +95,61 @@ export function Register() {
       ...e,
       [k]: '',
     }))
+    setGeneralError('')
+    setApiError('')
   }
 
-  const submit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setGeneralError('')
     const next: Record<string, string> = {}
     if (!form.name.trim()) next.name = 'Enter your full name.'
+    else if (form.name.trim().length < 3) next.name = 'Full name must be at least 3 characters.'
+    
     if (!/^[0-9+\s-]{7,}$/.test(form.phone.trim()))
       next.phone = 'Enter a valid phone number.'
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       next.email = 'Enter a valid email address.'
     }
     setErrors(next)
-    if (Object.keys(next).length === 0) {
+    if (Object.keys(next).length > 0) {
+      return
+    }
+
+    // Check backend for duplicate Name, Email, and Phone before proceeding to Step 2
+    setIsValidating(true)
+    try {
+      const res = await apiFetch('/api/register.php?validate_only=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.name.trim(),
+          phone: form.phone.trim(),
+          email: form.email.trim().toLowerCase(),
+          plan,
+          paymentMethod: 'bank',
+        }),
+      })
+      const data = await res.json()
+
+      if (!data.success) {
+        setIsValidating(false)
+        if (data.fields && typeof data.fields === 'object') {
+          setErrors(data.fields)
+        }
+        if (data.error) {
+          setGeneralError(data.error)
+        }
+        return
+      }
+
+      // If valid and unique, proceed to step 2 (payment options)
+      setIsValidating(false)
+      setErrors({})
+      setDone(true)
+    } catch (err: any) {
+      // Fallback: If network is offline, allow proceeding
+      setIsValidating(false)
       setDone(true)
     }
   }
@@ -122,7 +167,7 @@ export function Register() {
       ref: activeRefCode,
     }
 
-    let apiResult: { success: boolean; userId?: string; reference?: string; status?: string; error?: string } | null = null
+    let apiResult: { success: boolean; userId?: string; reference?: string; status?: string; error?: string; fields?: Record<string, string> } | null = null
 
     try {
       const res = await apiFetch('/api/register.php', {
@@ -136,7 +181,11 @@ export function Register() {
     }
 
     if (apiResult && !apiResult.success) {
-      const errMsg = apiResult.error || 'Registration failed. Please try again.'
+      if (apiResult.fields && typeof apiResult.fields === 'object') {
+        setErrors(apiResult.fields)
+        setDone(false) // Return user to step 1 so they can fix duplicate fields
+      }
+      const errMsg = apiResult.error || 'Registration failed. Please check your details and try again.'
       setApiError(errMsg)
       setIsPaying(false)
       return null
@@ -476,6 +525,13 @@ export function Register() {
                   <h2 className="font-display text-lg font-bold text-brand-dark">
                     2. Your details
                   </h2>
+                  
+                  {generalError && (
+                    <div className="mt-3 rounded-xl bg-red-50 p-3 text-xs font-medium text-red-700 border border-red-200">
+                      {generalError}
+                    </div>
+                  )}
+
                   <form onSubmit={submit} noValidate className="mt-5 space-y-5">
                     <div>
                       <label
@@ -490,12 +546,21 @@ export function Register() {
                         value={form.name}
                         onChange={(e) => update('name', e.target.value)}
                         className={`${inputBase} ${errors.name ? 'border-red-400' : 'border-gray-200'}`}
-                        placeholder="Your name"
+                        placeholder="Your full name (e.g. John Doe)"
                       />
                       {errors.name && (
-                        <p className="mt-1 text-xs text-red-500">
-                          {errors.name}
-                        </p>
+                        <div className="mt-1.5 flex items-center justify-between text-xs">
+                          <p className="text-red-500 font-medium">{errors.name}</p>
+                          {errors.name.toLowerCase().includes('already registered') && (
+                            <button
+                              type="button"
+                              onClick={() => navigate('/login')}
+                              className="ml-2 font-bold text-brand hover:underline shrink-0"
+                            >
+                              Log in →
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                     <div>
@@ -511,12 +576,21 @@ export function Register() {
                         value={form.phone}
                         onChange={(e) => update('phone', e.target.value)}
                         className={`${inputBase} ${errors.phone ? 'border-red-400' : 'border-gray-200'}`}
-                        placeholder="080..."
+                        placeholder="080... or +234..."
                       />
                       {errors.phone && (
-                        <p className="mt-1 text-xs text-red-500">
-                          {errors.phone}
-                        </p>
+                        <div className="mt-1.5 flex items-center justify-between text-xs">
+                          <p className="text-red-500 font-medium">{errors.phone}</p>
+                          {errors.phone.toLowerCase().includes('already registered') && (
+                            <button
+                              type="button"
+                              onClick={() => navigate('/login')}
+                              className="ml-2 font-bold text-brand hover:underline shrink-0"
+                            >
+                              Log in →
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                     <div>
@@ -574,11 +648,20 @@ export function Register() {
                     </div>
                     <Button
                       type="submit"
+                      disabled={isValidating}
                       variant="accent"
                       size="lg"
                       className="w-full"
                     >
-                      Continue to Payment <ArrowRightIcon className="h-5 w-5" />
+                      {isValidating ? (
+                        <>
+                          <Loader2Icon className="h-5 w-5 animate-spin" /> Verifying details...
+                        </>
+                      ) : (
+                        <>
+                          Continue to Payment <ArrowRightIcon className="h-5 w-5" />
+                        </>
+                      )}
                     </Button>
                     <p className="flex items-center justify-center gap-2 text-xs text-gray-400">
                       <ShieldCheckIcon className="h-4 w-4" /> Your information

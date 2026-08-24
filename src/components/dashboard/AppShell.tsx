@@ -925,11 +925,11 @@ export function AppShell({ role }: { role: Role }) {
   if (!currentUser) {
     return <Navigate to="/login" replace />
   }
-  
-  // If we want strict role checks:
-  // if (currentUser.role !== role) {
-  //  return <Navigate to="/login" replace />
-  // }
+
+  if (currentUser.status === 'suspended') {
+    clearCurrentUser()
+    return <Navigate to="/login" replace />
+  }
 
   return (
     <DashboardProvider>

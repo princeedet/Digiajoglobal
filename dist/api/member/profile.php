@@ -65,7 +65,7 @@ try {
                 COALESCE(SUM(amount), 0) as calc_saved,
                 MAX(COALESCE(NULLIF(hands, 0), ROUND(amount / 1300), 1)) as calc_hands
             FROM payments
-            WHERE ((user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?)) 
+            WHERE (((user_id > 0 AND user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?))) 
               AND status IN ('approved', 'confirmed', 'success')
               AND amount != 2000
               AND (payment_scope = 'weekly' OR (
@@ -90,7 +90,7 @@ try {
         $lastPayStmt = $db->prepare("
             SELECT hands, amount, created_at, paid_at 
             FROM payments 
-            WHERE ((user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?))
+            WHERE (((user_id > 0 AND user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?)))
               AND status IN ('approved', 'confirmed', 'success')
               AND amount != 2000
               AND (payment_scope = 'weekly' OR (

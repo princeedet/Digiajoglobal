@@ -32,16 +32,21 @@ $scope        = 'weekly';
 $db = getDB();
 
 try {
-    // Look up the user by member_id, numeric id, or email
+    $userEmail = trim($body['email'] ?? '');
+    $userName  = trim($body['name'] ?? '');
+
+    // Look up the user by member_id, numeric id, email, or name
     $cleanId = is_numeric($memberId) ? (int)$memberId : (int)preg_replace('/\D/', '', $memberId);
     $stmt = $db->prepare('
-        SELECT id, name, email FROM users 
+        SELECT id, name, email, member_id FROM users 
         WHERE (member_id = ? AND member_id != "") 
-           OR (id = ? AND ? > 0) 
            OR (email = ? AND email != "") 
+           OR (email = ? AND email != "") 
+           OR (name = ? AND name != "")
+           OR (id = ? AND ? > 0) 
         LIMIT 1
     ');
-    $stmt->execute([$memberId, $cleanId, $cleanId, $memberId]);
+    $stmt->execute([$memberId, $memberId, $userEmail, $userName, $cleanId, $cleanId]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
     if (!$user) {
@@ -49,6 +54,8 @@ try {
         echo json_encode(['success' => false, 'error' => 'User not found']);
         exit;
     }
+
+    $officialMemberId = $user['member_id'] ?: ('DA-' . $user['id']);
 
     // Generate reference if not provided
     if (empty($reference)) {
@@ -66,8 +73,6 @@ try {
     }
 
     // ── Insert the single payment record ─────────────────────────────────────
-    // The admin approves this one record, and savings_history.php expands it
-    // into `weeks_covered` individual week slots when displaying to the user.
     $stmt = $db->prepare("
         INSERT INTO payments
             (payment_ref, user_id, member_id, member_name, amount, channel,
@@ -79,7 +84,7 @@ try {
     $stmt->execute([
         $reference,
         $user['id'],
-        $memberId,
+        $officialMemberId,
         $user['name'],
         $amount,
         $channel,

@@ -1,5 +1,5 @@
 <?php
-// ─── DigiAjo Global — Safe Database & Payments Relinker ──────────────────────
+// ─── DigiAjo Global — Safe Name-Based Payments Relinker ──────────────────────
 require_once __DIR__ . '/../config.php';
 
 header('Content-Type: application/json');
@@ -10,23 +10,44 @@ try {
     // 1. Fetch all users
     $users = $db->query("SELECT id, member_id, name, email FROM users")->fetchAll(PDO::FETCH_ASSOC);
 
-    // 2. Relink each payment to the matching user by Name or Email or Member ID
-    foreach ($users as $u) {
-        $uid  = (int)$u['id'];
-        $mid  = trim($u['member_id']);
-        $name = trim($u['name']);
-        $email = trim($u['email']);
+    // 2. Fetch all payments
+    $payments = $db->query("SELECT payment_ref, member_name, member_id, amount, status FROM payments")->fetchAll(PDO::FETCH_ASSOC);
 
-        // Update payments matching this user's name or member_id
-        $updatePay = $db->prepare("
-            UPDATE payments 
-            SET user_id = ?, member_id = ?
-            WHERE (member_name = ? OR member_name LIKE ? OR member_id = ?)
-        ");
-        $updatePay->execute([$uid, $mid, $name, '%' . $name . '%', $mid]);
+    $updatedPayments = [];
+
+    // 3. For each payment, link strictly by member_name to the correct user
+    foreach ($payments as $p) {
+        $pRef = trim($p['payment_ref']);
+        $pName = trim($p['member_name']);
+        
+        $targetUser = null;
+        foreach ($users as $u) {
+            if (!empty($pName) && (
+                strcasecmp($u['name'], $pName) === 0 ||
+                stripos($u['name'], $pName) !== false ||
+                stripos($pName, $u['name']) !== false
+            )) {
+                $targetUser = $u;
+                break;
+            }
+        }
+
+        if ($targetUser && !empty($pRef)) {
+            $stmt = $db->prepare("UPDATE payments SET user_id = ?, member_id = ? WHERE payment_ref = ?");
+            $stmt->execute([(int)$targetUser['id'], $targetUser['member_id'], $pRef]);
+
+            $updatedPayments[] = [
+                'ref'         => $pRef,
+                'name'        => $pName,
+                'assigned_to' => $targetUser['name'],
+                'user_id'     => (int)$targetUser['id'],
+                'member_id'   => $targetUser['member_id'],
+                'amount'      => (float)$p['amount'],
+            ];
+        }
     }
 
-    // 3. Recalculate true savings and weeks for each user strictly from their payments
+    // 4. Recalculate true savings for each user strictly from their payments
     $report = [];
 
     foreach ($users as $u) {
@@ -64,11 +85,6 @@ try {
             $db->prepare("UPDATE savings_plans SET total_saved = ?, weeks_completed = ? WHERE user_id = ?")->execute([$saved, $weeks, $uid]);
         } catch (Exception $e) {}
 
-        // Fetch matched payments for report
-        $mPayStmt = $db->prepare("SELECT id, payment_ref, member_name, amount, purpose, weeks_covered, status FROM payments WHERE user_id = ? OR member_id = ?");
-        $mPayStmt->execute([$uid, $mid]);
-        $userPayments = $mPayStmt->fetchAll(PDO::FETCH_ASSOC);
-
         $report[] = [
             'id'        => $mid,
             'user_id'   => $uid,
@@ -76,14 +92,14 @@ try {
             'email'     => $u['email'],
             'saved'     => $saved,
             'weeks'     => $weeks,
-            'payments'  => $userPayments,
         ];
     }
 
     echo json_encode([
-        'success'  => true,
-        'message'  => 'All payments have been safely relinked and user savings have been recalibrated.',
-        'members'  => $report,
+        'success'          => true,
+        'message'          => 'All payments have been strictly assigned by member name and all balances recalculated.',
+        'updated_payments' => $updatedPayments,
+        'members'          => $report,
     ]);
 
 } catch (Exception $e) {

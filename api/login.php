@@ -268,9 +268,10 @@ if ($weeks === 0 && $saved > 0 && $activeHands > 0) {
     $weeks = max(1, (int)round($saved / ($activeHands * 1300)));
 }
 
-// ─── Update last login ─────────────────────────────────────────────────────
+// ─── Update last login & sync accurate savings ───────────────────────────────
 try {
-    $db->prepare('UPDATE users SET last_login = NOW() WHERE id = ?')->execute([$user['id']]);
+    $db->prepare('UPDATE users SET last_login = NOW(), saved = ?, weeks = ? WHERE id = ?')->execute([$saved, $weeks, $user['id']]);
+    $db->prepare('UPDATE savings_plans SET total_saved = ?, weeks_completed = ? WHERE user_id = ?')->execute([$saved, $weeks, $user['id']]);
 } catch (PDOException $e) { /* non-fatal */ }
 
 // ─── Response ─────────────────────────────────────────────────────────────────

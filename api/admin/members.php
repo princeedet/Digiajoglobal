@@ -174,6 +174,12 @@ try {
                 $m['plan'] = 'DigiMart';
             }
 
+            // Self-heal: ensure users table and savings_plans match the accurate payment sums
+            try {
+                $db->prepare("UPDATE users SET saved = ?, weeks = ? WHERE id = ?")->execute([$m['saved'], $m['weeks'], $m['user_id']]);
+                $db->prepare("UPDATE savings_plans SET total_saved = ?, weeks_completed = ? WHERE user_id = ?")->execute([$m['saved'], $m['weeks'], $m['user_id']]);
+            } catch (Exception $e) {}
+
             // Auto-suspend check: 4 missed weeks (only for members who have actually started saving)
             $joinedStr = $m['joined'] ?? 'now';
             $joinedTime = strtotime($joinedStr) ?: time();

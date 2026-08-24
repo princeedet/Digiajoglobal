@@ -7,6 +7,12 @@ header('Content-Type: application/json');
 $db = getDB();
 
 try {
+    // 0. If force_zero or clear_phantom is requested, zero out non-Prince Edet users immediately
+    if (isset($_GET['clear_phantom']) || isset($_GET['force_zero'])) {
+        $db->exec("UPDATE users SET saved = 0.00, weeks = 0 WHERE name NOT LIKE '%Prince Edet%' AND email != 'princeedet190@gmail.com'");
+        $db->exec("UPDATE savings_plans SET total_saved = 0.00, weeks_completed = 0 WHERE user_id NOT IN (SELECT id FROM users WHERE name LIKE '%Prince Edet%' OR email = 'princeedet190@gmail.com')");
+    }
+
     // 1. Fetch all raw payments to inspect what is in the table
     $allPayments = $db->query("
         SELECT id, user_id, member_id, member_name, amount, channel, payment_type, payment_scope, purpose, status, weeks_covered, created_at 

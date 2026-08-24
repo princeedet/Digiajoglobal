@@ -142,10 +142,10 @@ try {
                     ) as plan,
                     COALESCE((
                         SELECT SUM(p.amount) FROM payments p
-                        WHERE ((p.user_id = u.id) OR (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u.member_id))
+                        WHERE ((p.user_id > 0 AND p.user_id = u.id) OR (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u.member_id))
                           AND p.status IN ('approved', 'confirmed', 'success')
                           AND p.amount != 2000
-                          AND (p.payment_scope = 'weekly' OR (
+                          AND (p.payment_scope = 'weekly' OR p.payment_type = 'weekly_contribution' OR (
                               (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
                               AND (p.purpose IS NULL OR (
                                   LOWER(p.purpose) NOT LIKE '%registration%' 
@@ -158,10 +158,10 @@ try {
                     ), 0) as saved,
                     COALESCE((
                         SELECT SUM(COALESCE(p.weeks_covered, 1)) FROM payments p
-                        WHERE ((p.user_id = u.id) OR (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u.member_id))
+                        WHERE ((p.user_id > 0 AND p.user_id = u.id) OR (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u.member_id))
                           AND p.status IN ('approved', 'confirmed', 'success')
                           AND p.amount != 2000
-                          AND (p.payment_scope = 'weekly' OR (
+                          AND (p.payment_scope = 'weekly' OR p.payment_type = 'weekly_contribution' OR (
                               (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
                               AND (p.purpose IS NULL OR (
                                   LOWER(p.purpose) NOT LIKE '%registration%' 

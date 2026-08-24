@@ -1,5 +1,5 @@
 <?php
-// ─── DigiAjo Global — Database Savings Balance Recalibrator ──────────────────
+// ─── DigiAjo Global — Database Savings Inspector & Recalibrator ──────────────
 require_once __DIR__ . '/../config.php';
 
 header('Content-Type: application/json');
@@ -7,7 +7,13 @@ header('Content-Type: application/json');
 $db = getDB();
 
 try {
-    // 1. Fetch all users
+    // 1. Fetch all raw payments to inspect what is in the table
+    $allPayments = $db->query("
+        SELECT id, user_id, member_id, member_name, amount, channel, payment_type, payment_scope, purpose, status, weeks_covered, created_at 
+        FROM payments
+    ")->fetchAll(PDO::FETCH_ASSOC);
+
+    // 2. Fetch all users
     $users = $db->query("SELECT id, member_id, name, email, saved, weeks FROM users")->fetchAll(PDO::FETCH_ASSOC);
 
     $results = [];
@@ -16,31 +22,33 @@ try {
         $userId   = (int)$u['id'];
         $memberId = trim($u['member_id'] ?? '');
 
-        // Calculate true approved weekly contributions
-        $stmt = $db->prepare("
-            SELECT 
-                COALESCE(SUM(amount), 0) as true_saved,
-                COALESCE(SUM(COALESCE(weeks_covered, 1)), 0) as true_weeks
-            FROM payments
-            WHERE (user_id = ? OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?))
-              AND status IN ('approved', 'confirmed', 'success')
-              AND amount != 2000
-              AND (payment_scope = 'weekly' OR (
-                  (payment_type IS NULL OR LOWER(payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit'))
-                  AND (purpose IS NULL OR (
-                      LOWER(purpose) NOT LIKE '%registration%' 
-                      AND LOWER(purpose) NOT LIKE '%reg fee%' 
-                      AND LOWER(purpose) NOT LIKE '%one-time%'
-                      AND LOWER(purpose) NOT LIKE '%fine%'
-                      AND LOWER(purpose) NOT LIKE '%digimart%'
-                  ))
-              ))
-        ");
-        $stmt->execute([$userId, $memberId]);
-        $calc = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Match payments strictly by user_id OR member_id
+        $matchedPayments = array_filter($allPayments, function($p) use ($userId, $memberId) {
+            $pUserId   = (int)($p['user_id'] ?? 0);
+            $pMemberId = trim($p['member_id'] ?? '');
+            $status    = strtolower(trim($p['status'] ?? ''));
 
-        $trueSaved = (float)($calc['true_saved'] ?? 0);
-        $trueWeeks = (int)($calc['true_weeks'] ?? 0);
+            $isUserMatch = ($pUserId > 0 && $pUserId === $userId) || 
+                           (!empty($memberId) && !empty($pMemberId) && $memberId === $pMemberId);
+
+            $isApproved  = in_array($status, ['approved', 'confirmed', 'success'], true);
+            $isWeekly    = ($p['payment_scope'] ?? '') === 'weekly' || 
+                           ($p['payment_type'] ?? '') === 'weekly_contribution' ||
+                           (stripos($p['purpose'] ?? '', 'Savings contribution') !== false);
+            $isRegFee    = (float)$p['amount'] == 2000 || 
+                           in_array(strtolower($p['payment_type'] ?? ''), ['registration', 'registration_fee', 'reg', 'fee']) ||
+                           stripos($p['purpose'] ?? '', 'registration') !== false;
+
+            return $isUserMatch && $isApproved && $isWeekly && !$isRegFee;
+        });
+
+        $trueSaved = 0.0;
+        $trueWeeks = 0;
+
+        foreach ($matchedPayments as $mp) {
+            $trueSaved += (float)$mp['amount'];
+            $trueWeeks += max(1, (int)($mp['weeks_covered'] ?? 1));
+        }
 
         // Update user record with true calculated values
         $updateStmt = $db->prepare("UPDATE users SET saved = ?, weeks = ? WHERE id = ?");
@@ -52,17 +60,19 @@ try {
         } catch (Exception $e) {}
 
         $results[] = [
-            'id'             => $u['member_id'] ?: 'DA-' . $userId,
-            'name'           => $u['name'],
-            'previous_saved' => (float)$u['saved'],
-            'new_saved'      => $trueSaved,
-            'new_weeks'      => $trueWeeks,
+            'id'               => $u['member_id'] ?: 'DA-' . $userId,
+            'name'             => $u['name'],
+            'previous_saved'   => (float)$u['saved'],
+            'new_saved'        => $trueSaved,
+            'new_weeks'        => $trueWeeks,
+            'matched_payments' => array_values($matchedPayments),
         ];
     }
 
     echo json_encode([
-        'success' => true,
-        'message' => 'All member savings balances have been verified and recalibrated strictly from approved weekly payments.',
+        'success'         => true,
+        'message'         => 'All member savings balances have been strictly audited and recalibrated.',
+        'all_payments'    => $allPayments,
         'updated_members' => $results,
     ]);
 } catch (Exception $e) {

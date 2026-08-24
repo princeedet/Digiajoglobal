@@ -116,7 +116,38 @@ export function Register() {
       return
     }
 
-    // Check backend for duplicate Name, Email, and Phone before proceeding to Step 2
+    // 1. Client-side fast check against locally cached members
+    const members = getStoredMembers()
+    const cleanName = form.name.trim().toLowerCase().replace(/\s+/g, ' ')
+    const cleanEmail = form.email.trim().toLowerCase()
+    const cleanDigits = form.phone.replace(/\D/g, '')
+    const phone10 = cleanDigits.length >= 10 ? cleanDigits.slice(-10) : cleanDigits
+
+    const localErrors: Record<string, string> = {}
+    for (const m of members) {
+      const mName = (m.name || '').trim().toLowerCase().replace(/\s+/g, ' ')
+      const mEmail = (m.email || '').trim().toLowerCase()
+      const mDigits = (m.phone || '').replace(/\D/g, '')
+      const mPhone10 = mDigits.length >= 10 ? mDigits.slice(-10) : mDigits
+
+      if (mEmail && mEmail === cleanEmail) {
+        localErrors.email = 'This email address is already registered on DigiAjo. Please use a different email or log in.'
+      }
+      if (phone10.length >= 7 && mPhone10 === phone10) {
+        localErrors.phone = 'This phone number is already registered on DigiAjo. Please use a different phone number or log in.'
+      }
+      if (mName && mName === cleanName) {
+        localErrors.name = `An account with the full name '${form.name.trim()}' is already registered. If you already have an account, please log in.`
+      }
+    }
+
+    if (Object.keys(localErrors).length > 0) {
+      setErrors(localErrors)
+      setGeneralError('An account with these details already exists. You cannot register with the same name, email or phone number more than once.')
+      return
+    }
+
+    // 2. Check backend database for duplicate Name, Email, and Phone before proceeding to Step 2
     setIsValidating(true)
     try {
       const res = await apiFetch('/api/register.php?validate_only=1', {
@@ -148,9 +179,8 @@ export function Register() {
       setErrors({})
       setDone(true)
     } catch (err: any) {
-      // Fallback: If network is offline, allow proceeding
       setIsValidating(false)
-      setDone(true)
+      setGeneralError('Unable to connect to the server to verify your registration details. Please check your network and try again.')
     }
   }
 

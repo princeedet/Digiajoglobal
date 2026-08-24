@@ -196,9 +196,9 @@ try {
         $conflictItems[] = 'phone number';
     }
 
-    // 3. Check Duplicate Full Name
-    $checkName = $db->prepare('SELECT id, member_id, name, email, phone, status FROM users WHERE LOWER(TRIM(name)) = LOWER(?) LIMIT 1');
-    $checkName->execute([$cleanName]);
+    // 3. Check Duplicate Full Name (case and spacing agnostic)
+    $checkName = $db->prepare('SELECT id, member_id, name, email, phone, status FROM users WHERE LOWER(TRIM(name)) = LOWER(?) OR REPLACE(LOWER(TRIM(name)), " ", "") = REPLACE(LOWER(?), " ", "") LIMIT 1');
+    $checkName->execute([$cleanName, $cleanName]);
     $existingNameUser = $checkName->fetch(PDO::FETCH_ASSOC);
 
     if ($existingNameUser) {

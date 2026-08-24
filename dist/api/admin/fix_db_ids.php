@@ -17,13 +17,13 @@ try {
         $name = trim($u['name']);
         $email = trim($u['email']);
 
-        // Update payments matching this user's name or email
+        // Update payments matching this user's name or member_id
         $updatePay = $db->prepare("
             UPDATE payments 
             SET user_id = ?, member_id = ?
-            WHERE (member_name = ? OR member_name LIKE ? OR member_email = ? OR member_id = ?)
+            WHERE (member_name = ? OR member_name LIKE ? OR member_id = ?)
         ");
-        $updatePay->execute([$uid, $mid, $name, '%' . $name . '%', $email, $mid]);
+        $updatePay->execute([$uid, $mid, $name, '%' . $name . '%', $mid]);
     }
 
     // 3. Recalculate true savings and weeks for each user strictly from their payments

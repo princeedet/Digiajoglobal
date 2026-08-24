@@ -530,6 +530,42 @@ function NotificationBell({
     }
   }, [currentUser, role])
 
+  // ── Auto-logout if account is deleted or suspended from server ─────────────
+  useEffect(() => {
+    if (!currentUser || role !== 'member') return
+
+    const checkActiveSession = async () => {
+      try {
+        const q = new URLSearchParams()
+        if (currentUser.id) q.set('member_id', String(currentUser.id))
+        if (currentUser.email) q.set('email', String(currentUser.email))
+
+        const res = await apiFetch(`/api/member/profile.php?${q.toString()}`)
+        if (res.status === 404 || res.status === 403 || res.status === 401) {
+          clearCurrentUser()
+          navigate('/login', { replace: true })
+          return
+        }
+        if (res.ok) {
+          const data = await res.json()
+          if (data.success && data.user) {
+            if (data.user.status === 'suspended') {
+              clearCurrentUser()
+              navigate('/login', { replace: true })
+            }
+          } else if (!data.success && (data.account_deleted || data.account_suspended)) {
+            clearCurrentUser()
+            navigate('/login', { replace: true })
+          }
+        }
+      } catch {}
+    }
+
+    checkActiveSession()
+    const sessionInterval = setInterval(checkActiveSession, 3000)
+    return () => clearInterval(sessionInterval)
+  }, [currentUser?.id, currentUser?.email, role, navigate])
+
   const handleDeleteOne = async (notifId: string | number, e: React.MouseEvent) => {
     e.stopPropagation()
 

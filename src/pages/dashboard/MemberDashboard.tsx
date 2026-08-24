@@ -23,7 +23,7 @@ import { StatCard } from '../../components/dashboard/StatCard'
 import { StatusBadge } from '../../components/dashboard/StatusBadge'
 import { PageHeader } from '../../components/dashboard/PageHeader'
 import { NAIRA } from '../../lib/brand'
-import { getCurrentUser, setCurrentUser } from '../../lib/persistence'
+import { getCurrentUser, setCurrentUser, clearCurrentUser } from '../../lib/persistence'
 import { apiFetch, apiUrl } from '../../lib/api'
 
 interface Payment {
@@ -81,11 +81,25 @@ export function MemberDashboard() {
       if (cachedUser?.email) q.set('email', cachedUser.email)
       if (cachedUser?.name) q.set('name', cachedUser.name)
       const res = await fetch(apiUrl(`/api/member/profile.php?${q.toString()}`))
+      if (res.status === 404 || res.status === 403 || res.status === 401) {
+        clearCurrentUser()
+        window.location.href = '/login'
+        return
+      }
       const data = await res.json()
       if (data.success && data.user) {
+        if (data.user.status === 'suspended') {
+          clearCurrentUser()
+          window.location.href = '/login'
+          return
+        }
         setUser(data.user)
         // Keep persistent session in sync
         setCurrentUser({ ...data.user, role: 'member' })
+      } else if (!data.success && (data.account_deleted || data.account_suspended)) {
+        clearCurrentUser()
+        window.location.href = '/login'
+        return
       }
     } catch (e) {
       console.error('Failed to load user profile in real-time', e)

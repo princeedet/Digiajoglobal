@@ -44,7 +44,21 @@ try {
 
     if (!$user) {
         http_response_code(404);
-        echo json_encode(['success' => false, 'error' => 'User not found']);
+        echo json_encode([
+            'success'         => false, 
+            'error'           => 'User not found or account has been deleted',
+            'account_deleted' => true,
+        ]);
+        exit;
+    }
+
+    if ($user['status'] === 'suspended') {
+        http_response_code(403);
+        echo json_encode([
+            'success'           => false, 
+            'error'             => 'Your account has been suspended. Please contact support.',
+            'account_suspended' => true,
+        ]);
         exit;
     }
 

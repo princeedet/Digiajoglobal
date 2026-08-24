@@ -187,6 +187,9 @@ try {
             $memberId = $targetUser['member_id'] ?: ('DA-' . $userId);
         }
 
+        // Pre-run schema verification OUTSIDE transaction to prevent implicit commits
+        ensure_notifications_schema($db);
+
         $db->beginTransaction();
 
         try {
@@ -371,7 +374,9 @@ try {
                 } catch (Exception $e) {}
             }
 
-            $db->commit();
+            if ($db->inTransaction()) {
+                $db->commit();
+            }
 
             echo json_encode([
                 'success' => true,

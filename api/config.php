@@ -75,7 +75,7 @@ require_once __DIR__ . '/security/firewall.php';
 // ─── Global Notifications Schema Migration & Safe Inserter ───────────────────
 function ensure_notifications_schema(PDO $db): void {
     static $schemaChecked = false;
-    if ($schemaChecked) return;
+    if ($schemaChecked || $db->inTransaction()) return;
     try {
         $db->exec("
             CREATE TABLE IF NOT EXISTS notifications (

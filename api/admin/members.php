@@ -457,7 +457,7 @@ try {
             $numericIds = array_column($userRows, 'id');
 
             if (empty($numericIds)) {
-                $db->rollBack();
+                if ($db->inTransaction()) $db->rollBack();
                 echo json_encode(['success' => true, 'message' => 'No users to delete', 'deleted' => 0]);
                 exit;
             }
@@ -481,7 +481,7 @@ try {
             }
             $db->prepare("DELETE FROM users WHERE id IN ($np)")->execute($numericIds);
 
-            $db->commit();
+            if ($db->inTransaction()) $db->commit();
 
             echo json_encode([
                 'success' => true,

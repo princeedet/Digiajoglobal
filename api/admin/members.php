@@ -84,6 +84,44 @@ try {
                 )
             ");
         } catch (Exception $e) {}
+
+        // ─── Direct Database Repair & Zero-Reset ───────────────────────────────
+        // Ensures only members with actual approved weekly payments have non-zero savings
+        try {
+            // 1. Reset any user with zero weekly payments to 0.00 saved and 0 weeks
+            $db->exec("
+                UPDATE users u
+                SET u.saved = 0.00, u.weeks = 0
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM payments p
+                    WHERE (p.user_id = u.id OR (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u.member_id))
+                      AND p.status IN ('approved', 'confirmed', 'success')
+                      AND p.amount != 2000
+                      AND (p.payment_scope = 'weekly' OR (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit')))
+                )
+            ");
+
+            // 2. Set accurate payment sums for users who DO have approved weekly payments
+            $db->exec("
+                UPDATE users u
+                INNER JOIN (
+                    SELECT 
+                        COALESCE(NULLIF(p.user_id, 0), u2.id) as target_user_id,
+                        SUM(p.amount) as real_saved,
+                        SUM(COALESCE(p.weeks_covered, 1)) as real_weeks
+                    FROM payments p
+                    LEFT JOIN users u2 ON (p.member_id IS NOT NULL AND p.member_id != '' AND p.member_id = u2.member_id)
+                    WHERE p.status IN ('approved', 'confirmed', 'success')
+                      AND p.amount != 2000
+                      AND (p.payment_scope = 'weekly' OR (p.payment_type IS NULL OR LOWER(p.payment_type) NOT IN ('registration', 'registration_fee', 'reg', 'fee', 'fine', 'digimart_unit')))
+                      AND (p.purpose IS NULL OR (LOWER(p.purpose) NOT LIKE '%registration%' AND LOWER(p.purpose) NOT LIKE '%reg fee%' AND LOWER(p.purpose) NOT LIKE '%fine%'))
+                    GROUP BY target_user_id
+                ) actual ON actual.target_user_id = u.id
+                SET 
+                    u.saved = actual.real_saved,
+                    u.weeks = actual.real_weeks
+            ");
+        } catch (Exception $e) {}
         
         try {
             $stmt = $db->query("

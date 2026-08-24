@@ -193,16 +193,17 @@ try {
         $db->beginTransaction();
 
         try {
-            // 1. Update target payment status
+            // 1. Update target payment status strictly for this specific payment reference
+            $payRef = $payment['payment_ref'] ?? '';
             $db->prepare("
                 UPDATE payments 
                 SET status = ?, paid_at = NOW(), user_id = ?, member_id = ?
-                WHERE id = ?
-            ")->execute([$status, $userId ?: null, $memberId ?: null, $dbPaymentId]);
+                WHERE payment_ref = ? OR (id = ? AND id > 0)
+            ")->execute([$status, $userId ?: null, $memberId ?: null, $payRef, $dbPaymentId]);
 
             // Safely sync payment_status column if exists
             try {
-                $db->prepare("UPDATE payments SET payment_status = ? WHERE id = ?")->execute([$status, $dbPaymentId]);
+                $db->prepare("UPDATE payments SET payment_status = ? WHERE payment_ref = ? OR (id = ? AND id > 0)")->execute([$status, $payRef, $dbPaymentId]);
             } catch (Exception $e) {}
 
             if ($status === 'approved') {

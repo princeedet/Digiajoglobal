@@ -194,7 +194,9 @@ export function PaymentHistory() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          member_id: memberId,
+          member_id: currentUser?.id || memberId,
+          email: currentUser?.email || '',
+          name: currentUser?.name || '',
           amount: totalAmount,
           channel: 'bank_transfer',
           reference: bankRef,

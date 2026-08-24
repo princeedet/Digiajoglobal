@@ -1,5 +1,5 @@
 <?php
-// ─── DigiAjo Global — Safe Name-Based Payments Relinker ──────────────────────
+// ─── DigiAjo Global — Safe Database, Payments & Balances Relinker ───────────
 require_once __DIR__ . '/../config.php';
 
 header('Content-Type: application/json');
@@ -7,15 +7,34 @@ header('Content-Type: application/json');
 $db = getDB();
 
 try {
-    // 1. Fetch all users
+    // 1. Give each payment a unique sequential ID if any row has id <= 0
+    $zeroCheck = $db->query("SELECT COUNT(*) FROM payments WHERE id <= 0")->fetchColumn();
+    if ($zeroCheck > 0) {
+        $allPayments = $db->query("SELECT payment_ref FROM payments ORDER BY created_at ASC")->fetchAll(PDO::FETCH_COLUMN);
+        $seq = 1;
+        foreach ($allPayments as $pRef) {
+            $db->prepare("UPDATE payments SET id = ? WHERE payment_ref = ? LIMIT 1")->execute([$seq++, $pRef]);
+        }
+    }
+
+    // 2. Safely ensure primary key and auto_increment
+    try {
+        $pkCheck = $db->query("SHOW KEYS FROM payments WHERE Key_name = 'PRIMARY'")->fetch();
+        if (!$pkCheck) {
+            $db->exec("ALTER TABLE payments ADD PRIMARY KEY (id)");
+        }
+        $db->exec("ALTER TABLE payments MODIFY id INT NOT NULL AUTO_INCREMENT");
+    } catch (Exception $e) {}
+
+    // 3. Fetch all users
     $users = $db->query("SELECT id, member_id, name, email FROM users")->fetchAll(PDO::FETCH_ASSOC);
 
-    // 2. Fetch all payments
-    $payments = $db->query("SELECT payment_ref, member_name, member_id, amount, status FROM payments")->fetchAll(PDO::FETCH_ASSOC);
+    // 4. Fetch all payments
+    $payments = $db->query("SELECT id, payment_ref, member_name, member_id, amount, status FROM payments")->fetchAll(PDO::FETCH_ASSOC);
 
     $updatedPayments = [];
 
-    // 3. For each payment, link strictly by member_name to the correct user
+    // 5. For each payment, link strictly by member_name or payment_ref
     foreach ($payments as $p) {
         $pRef = trim($p['payment_ref']);
         $pName = trim($p['member_name']);
@@ -37,6 +56,7 @@ try {
             $stmt->execute([(int)$targetUser['id'], $targetUser['member_id'], $pRef]);
 
             $updatedPayments[] = [
+                'id'          => $p['id'],
                 'ref'         => $pRef,
                 'name'        => $pName,
                 'assigned_to' => $targetUser['name'],
@@ -47,7 +67,7 @@ try {
         }
     }
 
-    // 4. Recalculate true savings for each user strictly from their payments
+    // 6. Recalculate true savings and weeks for each user strictly from their approved weekly payments
     $report = [];
 
     foreach ($users as $u) {
@@ -97,7 +117,7 @@ try {
 
     echo json_encode([
         'success'          => true,
-        'message'          => 'All payments have been strictly assigned by member name and all balances recalculated.',
+        'message'          => 'All payments have been strictly assigned and user balances recalibrated.',
         'updated_payments' => $updatedPayments,
         'members'          => $report,
     ]);

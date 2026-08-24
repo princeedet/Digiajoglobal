@@ -1,5 +1,5 @@
 <?php
-// ─── DigiAjo Global — Database & Payments Complete Relinker ──────────────────
+// ─── DigiAjo Global — Safe Database & Payments Relinker ──────────────────────
 require_once __DIR__ . '/../config.php';
 
 header('Content-Type: application/json');
@@ -7,106 +7,31 @@ header('Content-Type: application/json');
 $db = getDB();
 
 try {
-    // 1. Ensure `users` and `payments` tables have AUTO_INCREMENT PRIMARY KEYS
-    try {
-        $pkCheck = $db->query("SHOW KEYS FROM users WHERE Key_name = 'PRIMARY'")->fetch();
-        if (!$pkCheck) {
-            $db->exec("ALTER TABLE users ADD PRIMARY KEY (id)");
-        }
-        $db->exec("ALTER TABLE users MODIFY id INT NOT NULL AUTO_INCREMENT");
-    } catch (Exception $e) {}
+    // 1. Fetch all users
+    $users = $db->query("SELECT id, member_id, name, email FROM users")->fetchAll(PDO::FETCH_ASSOC);
 
-    try {
-        $pkPayCheck = $db->query("SHOW KEYS FROM payments WHERE Key_name = 'PRIMARY'")->fetch();
-        if (!$pkPayCheck) {
-            $db->exec("ALTER TABLE payments ADD PRIMARY KEY (id)");
-        }
-        $db->exec("ALTER TABLE payments MODIFY id INT NOT NULL AUTO_INCREMENT");
-    } catch (Exception $e) {}
-
-    // 2. Fetch all users
-    $users = $db->query("SELECT id, member_id, name, email FROM users ORDER BY created_at ASC")->fetchAll(PDO::FETCH_ASSOC);
-
-    $userMap = [];
-    $nextId = 1;
-
+    // 2. Relink each payment to the matching user by Name or Email or Member ID
     foreach ($users as $u) {
-        $assignedId = $nextId++;
-        $memberId = trim($u['member_id']);
-        if (empty($memberId) || $memberId === 'DA-0') {
-            $memberId = 'DA-' . rand(10000, 99999);
-        }
+        $uid  = (int)$u['id'];
+        $mid  = trim($u['member_id']);
+        $name = trim($u['name']);
+        $email = trim($u['email']);
 
-        $db->prepare("UPDATE users SET id = ?, member_id = ? WHERE email = ?")->execute([$assignedId, $memberId, $u['email']]);
-
-        $userMap[$u['email']] = [
-            'id'        => $assignedId,
-            'name'      => $u['name'],
-            'email'     => $u['email'],
-            'member_id' => $memberId,
-        ];
-    }
-
-    // 3. Re-assign unique IDs to payments if id = 0
-    $rawPayments = $db->query("SELECT * FROM payments ORDER BY created_at ASC")->fetchAll(PDO::FETCH_ASSOC);
-    $payNextId = 1;
-
-    foreach ($rawPayments as $rp) {
-        $newPayId = $payNextId++;
-        $pName = trim($rp['member_name']);
-        $pRef = trim($rp['payment_ref']);
-        
-        // Match user strictly by name or member_id
-        $matchedUserId = 0;
-        $matchedMemberId = '';
-
-        foreach ($userMap as $email => $uInfo) {
-            if (!empty($pName) && (
-                strcasecmp($uInfo['name'], $pName) === 0 || 
-                stripos($uInfo['name'], $pName) !== false || 
-                stripos($pName, $uInfo['name']) !== false
-            )) {
-                $matchedUserId = $uInfo['id'];
-                $matchedMemberId = $uInfo['member_id'];
-                break;
-            }
-        }
-
-        // If not matched by name, check member_id
-        if (!$matchedUserId && !empty($rp['member_id'])) {
-            foreach ($userMap as $email => $uInfo) {
-                if ($rp['member_id'] === $uInfo['member_id']) {
-                    $matchedUserId = $uInfo['id'];
-                    $matchedMemberId = $uInfo['member_id'];
-                    break;
-                }
-            }
-        }
-
-        // Update payment with distinct primary key ID, correct user_id, and correct member_id
-        $db->prepare("
+        // Update payments matching this user's name or email
+        $updatePay = $db->prepare("
             UPDATE payments 
-            SET id = ?, user_id = ?, member_id = ?
-            WHERE payment_ref = ? OR (id = 0 AND member_name = ? AND amount = ? AND created_at = ?)
-            LIMIT 1
-        ")->execute([
-            $newPayId,
-            $matchedUserId,
-            $matchedMemberId,
-            $pRef,
-            $pName,
-            $rp['amount'],
-            $rp['created_at']
-        ]);
+            SET user_id = ?, member_id = ?
+            WHERE (member_name = ? OR member_name LIKE ? OR member_email = ? OR member_id = ?)
+        ");
+        $updatePay->execute([$uid, $mid, $name, '%' . $name . '%', $email, $mid]);
     }
 
-    // 4. Recalculate true savings for each user
-    $finalUsers = $db->query("SELECT id, member_id, name, email FROM users")->fetchAll(PDO::FETCH_ASSOC);
+    // 3. Recalculate true savings and weeks for each user strictly from their payments
     $report = [];
 
-    foreach ($finalUsers as $fu) {
-        $uid = (int)$fu['id'];
-        $mid = $fu['member_id'];
+    foreach ($users as $u) {
+        $uid = (int)$u['id'];
+        $mid = trim($u['member_id']);
 
         $payStmt = $db->prepare("
             SELECT 
@@ -131,13 +56,15 @@ try {
         $saved = (float)($calc['real_saved'] ?? 0);
         $weeks = (int)($calc['real_weeks'] ?? 0);
 
+        // Update users table
         $db->prepare("UPDATE users SET saved = ?, weeks = ? WHERE id = ?")->execute([$saved, $weeks, $uid]);
 
+        // Update savings_plans table
         try {
             $db->prepare("UPDATE savings_plans SET total_saved = ?, weeks_completed = ? WHERE user_id = ?")->execute([$saved, $weeks, $uid]);
         } catch (Exception $e) {}
 
-        // Fetch matched payment details
+        // Fetch matched payments for report
         $mPayStmt = $db->prepare("SELECT id, payment_ref, member_name, amount, purpose, weeks_covered, status FROM payments WHERE user_id = ? OR member_id = ?");
         $mPayStmt->execute([$uid, $mid]);
         $userPayments = $mPayStmt->fetchAll(PDO::FETCH_ASSOC);
@@ -145,8 +72,8 @@ try {
         $report[] = [
             'id'        => $mid,
             'user_id'   => $uid,
-            'name'      => $fu['name'],
-            'email'     => $fu['email'],
+            'name'      => $u['name'],
+            'email'     => $u['email'],
             'saved'     => $saved,
             'weeks'     => $weeks,
             'payments'  => $userPayments,
@@ -155,7 +82,7 @@ try {
 
     echo json_encode([
         'success'  => true,
-        'message'  => 'Database & Payments have been completely relinked to the correct member accounts.',
+        'message'  => 'All payments have been safely relinked and user savings have been recalibrated.',
         'members'  => $report,
     ]);
 

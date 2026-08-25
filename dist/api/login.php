@@ -207,7 +207,7 @@ try {
             COUNT(*) as count_payments,
             COALESCE(SUM(COALESCE(weeks_covered, 1)), 0) as calc_weeks,
             COALESCE(SUM(amount), 0) as calc_saved,
-            MAX(COALESCE(NULLIF(hands, 0), ROUND(amount / 1300), 1)) as calc_hands
+            MAX(COALESCE(NULLIF(hands, 0), ROUND(amount / (1300 * COALESCE(NULLIF(weeks_covered, 0), 1))), 1)) as calc_hands
         FROM payments
         WHERE ((user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?)) 
           AND status IN ('approved', 'confirmed', 'success')
@@ -231,7 +231,7 @@ try {
     $calcHands = max(1, (int)($calc['calc_hands'] ?? 1));
 
     $lastPayStmt = $db->prepare("
-        SELECT hands, amount FROM payments 
+        SELECT hands, amount, weeks_covered FROM payments 
         WHERE ((user_id = ?) OR (member_id IS NOT NULL AND member_id != '' AND member_id = ?))
           AND status IN ('approved', 'confirmed', 'success')
           AND amount != 2000
@@ -251,11 +251,13 @@ try {
     $lastPay = $lastPayStmt->fetch(PDO::FETCH_ASSOC);
     if ($lastPay) {
         $amt = (float)$lastPay['amount'];
-        $h = (int)($lastPay['hands'] ?? 1);
-        if ($h <= 1 && $amt > 1300 && fmod($amt, 1300) == 0) {
-            $h = (int)round($amt / 1300);
+        $wk = max(1, (int)($lastPay['weeks_covered'] ?? 1));
+        $storedHands = (int)($lastPay['hands'] ?? 0);
+        if ($storedHands > 0) {
+            $activeHands = $storedHands;
+        } else {
+            $activeHands = max(1, (int)round($amt / (1300 * $wk)));
         }
-        $activeHands = max(1, $h);
     } else {
         $activeHands = $calcHands;
     }

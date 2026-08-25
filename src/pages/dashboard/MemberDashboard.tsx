@@ -213,7 +213,7 @@ export function MemberDashboard() {
   }, [payments, user])
 
   // Plan specifics (50-week cycle for fixed active hands)
-  const activeHands = (user as any)?.activeHands || Math.max(1, Math.round((savedAmount || 1300) / 1300 / Math.max(1, weeksCompleted || 1))) || 1
+  const activeHands = (user as any)?.activeHands || (weeksCompleted > 0 ? Math.max(1, Math.round(savedAmount / (1300 * Math.max(1, weeksCompleted)))) : 1) || 1
   const isDigiMart = plan.toLowerCase().includes('mart')
   const totalWeeksPossible = 50
   const weeksRemaining = Math.max(0, totalWeeksPossible - weeksCompleted)

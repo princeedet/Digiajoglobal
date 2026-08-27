@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { PageHeader } from '../../components/dashboard/PageHeader'
 import { StatusBadge } from '../../components/dashboard/StatusBadge'
-import { NAIRA } from '../../lib/brand'
+import { NAIRA, COMPANY_BANK } from '../../lib/brand'
 import { getCurrentUser, getStoredPayments, savePayments } from '../../lib/persistence'
 import { apiFetch, apiUrl } from '../../lib/api'
 import { useDashboard } from '../../components/dashboard/DashboardContext'
@@ -856,16 +856,16 @@ export function PaymentHistory() {
                   <div className="mt-1.5 space-y-1 text-xs">
                     <div className="flex justify-between">
                       <span className="text-gray-500">Bank Name</span>
-                      <span className="font-bold text-brand-dark">Rigo Microfinance Bank</span>
+                      <span className="font-bold text-brand-dark">{COMPANY_BANK.bankName}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Account Number</span>
-                      <span className="font-mono font-bold text-brand-dark text-sm">1100007188</span>
+                      <span className="font-mono font-bold text-brand-dark text-sm">{COMPANY_BANK.accountNumber}</span>
                     </div>
                     <div className="flex justify-between">
                       <span className="text-gray-500">Account Name</span>
                       <span className="font-bold text-brand-dark">
-                        Betahealthplus Integrated Services Ltd
+                        {COMPANY_BANK.accountName}
                       </span>
                     </div>
                   </div>

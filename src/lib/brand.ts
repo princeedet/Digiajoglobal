@@ -7,4 +7,10 @@ export const BRAND = {
   registrationFee: '₦2,000',
 } as const
 
+export const COMPANY_BANK = {
+  accountName: 'Betahealthplus Integrated Services Ltd',
+  accountNumber: '3000716507',
+  bankName: 'Moniepoint MFB',
+} as const
+
 export const NAIRA = (n: number) => '₦' + n.toLocaleString('en-NG')

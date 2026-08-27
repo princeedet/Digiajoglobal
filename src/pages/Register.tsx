@@ -18,7 +18,7 @@ import {
 import { Section } from '../components/ui/Section'
 import { Reveal } from '../components/ui/Reveal'
 import { Button } from '../components/ui/Button'
-import { BRAND } from '../lib/brand'
+import { BRAND, COMPANY_BANK } from '../lib/brand'
 import { getStoredMembers, saveMembers, getStoredPayments, savePayments } from '../lib/persistence'
 import type { MemberUser, Payment } from '../lib/dashboard-data'
 import { apiUrl, apiFetch } from '../lib/api'
@@ -416,15 +416,15 @@ export function Register() {
                             <div className="mt-2.5 space-y-2 text-sm">
                               <div className="flex justify-between">
                                 <span className="text-gray-500">Bank Name</span>
-                                <span className="font-bold text-brand-dark">Rigo Microfinance Bank</span>
+                                <span className="font-bold text-brand-dark">{COMPANY_BANK.bankName}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-500">Account Number</span>
-                                <span className="font-mono font-bold text-brand-dark text-base">1100007188</span>
+                                <span className="font-mono font-bold text-brand-dark text-base">{COMPANY_BANK.accountNumber}</span>
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-500">Account Name</span>
-                                <span className="font-bold text-brand-dark">Betahealthplus Integrated Services Ltd</span>
+                                <span className="font-bold text-brand-dark">{COMPANY_BANK.accountName}</span>
                               </div>
                             </div>
                           </div>
